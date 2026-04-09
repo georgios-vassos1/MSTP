@@ -1,5 +1,3 @@
-using DataStructures  # kept only for OrderedDict-free alternative below
-
 # Immutable parameter struct — all fields use plain Julia types that map
 # cleanly to/from R via JuliaCall (no OrderedDict, no Symbol-keyed Dict).
 struct HyperParams

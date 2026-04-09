@@ -29,13 +29,13 @@ generate_instance <- function(
   Bids    <- replicate(nBids,
                sample(nLanes, size = sample(6L:18L, 1L), replace = FALSE),
                simplify = FALSE)
-  winners <- replicate(nCarriers,
+  Winners <- replicate(nCarriers,
                sample(nBids, size = sample(1L:2L, 1L), replace = FALSE),
                simplify = FALSE)
 
-  ordx <- unlist(winners, use.names = FALSE)
+  ordx <- unlist(Winners, use.names = FALSE)
   Ldx  <- unlist(Bids[ordx], use.names = FALSE)
-  nLc  <- c(0L, sapply(winners, function(w) length(unlist(Bids[w]))))
+  nLc  <- c(0L, sapply(Winners, function(w) length(unlist(Bids[w]))))
 
   list(
     tau             = tau,
@@ -44,7 +44,7 @@ generate_instance <- function(
     nCarriers       = nCarriers,
     nSpotCarriers   = nSpotCarriers,
     Bids            = Bids,
-    winners         = winners,
+    Winners         = Winners,
     Ldx             = Ldx,
     nLc             = nLc,
     entry_stock_0   = sample(seq(0L,  500L, by = 50L), nOrigins,      replace = TRUE),

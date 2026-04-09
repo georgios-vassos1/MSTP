@@ -1,4 +1,4 @@
-using SDDP, Gurobi, HiGHS
+using SDDP, HiGHS
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -42,8 +42,8 @@ end
 
 # Build and train the SDDP policy graph.
 # Returns the trained PolicyGraph — held as a Julia-side proxy in R.
-function train_model(config::HyperParams, iterations::Int64, solver::String)
-    optimizer = solver == "gurobi" ? Gurobi.Optimizer : HiGHS.Optimizer
+function train_model(config::HyperParams, iterations::Int64, solver::String="highs")
+    optimizer = HiGHS.Optimizer
 
     model = SDDP.PolicyGraph(
         (sp, stage) -> transportation_t(sp, stage; config = config),
@@ -135,7 +135,7 @@ end
 # Convenience: train and simulate a list of configs in one call.
 # Returns a Vector of result Dicts (one per instance).
 function batch_run(configs::Vector{HyperParams}, iterations::Int64,
-                   trials::Int64, solver::String)
+                   trials::Int64, solver::String="highs")
     map(configs) do config
         model = train_model(config, iterations, solver)
         simulate_model(model, config, trials)

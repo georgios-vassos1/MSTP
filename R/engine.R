@@ -58,13 +58,12 @@ mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
 
   params <- c(
     instance[c("tau", "nOrigins", "nDestinations", "nCarriers", "nSpotCarriers",
-               "Bids", "winners",
+               "Bids", "Winners",
                "entry_stock_0", "exit_stock_0", "exit_short_0",
                "entry_capacity", "exit_capacity",
                "entry_store_coef", "exit_store_coef", "exit_short_coef",
                "transport_coef", "spot_coef", "carrier_capacity")],
     list(
-      Winners     = instance$winners,    # alias expected by Julia
       lambda      = as.numeric(lambda),
       corrmat     = corrmat,
       n_scenarios = as.integer(n_scenarios)
@@ -104,10 +103,10 @@ mstp_gen_corrmat <- function(n_blocks, block_size, cross_corr = 0.4) {
 #'
 #' @param config      Julia proxy returned by `mstp_config()`.
 #' @param iterations  Number of SDDP training iterations (default 1500).
-#' @param solver      `"gurobi"` (default) or `"highs"`.
+#' @param solver      `"highs"` (default) or `"gurobi"`.
 #' @return An opaque Julia proxy (SDDP.PolicyGraph).
 #' @export
-mstp_train <- function(config, iterations = 1500L, solver = c("gurobi", "highs")) {
+mstp_train <- function(config, iterations = 1500L, solver = c("highs", "gurobi")) {
   .ensure_engine()
   solver <- match.arg(solver)
   JuliaCall::julia_call("train_model", config,
