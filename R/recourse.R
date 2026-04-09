@@ -17,6 +17,7 @@ compute_regret <- function(sims, sddp_results, n_cores = NULL) {
 
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
+  solve_lp <- solve_lp  # capture in local frame for cluster export
 
   regrets <- vector("list", n_instances)
 

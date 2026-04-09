@@ -1,19 +1,16 @@
 # Thin adapter: solve a Gurobi-style LP/MIP model with HiGHS.
 # Accepts model lists with fields: obj, A, rhs, sense, modelsense, vtype
 # Returns list with: objval, objbound, x, status
-solve_lp <- function(model, silent = TRUE) {
+solve_lp <- function(model) {
   n   <- ncol(model$A)
   sns <- model$sense
 
-  lhs <- ifelse(sns == "=",  model$rhs,
-         ifelse(sns == "<=", -Inf, model$rhs))
-  rhs <- ifelse(sns == "=",  model$rhs,
-         ifelse(sns == "<=",  model$rhs, Inf))
+  is_le <- sns %in% c("<", "<=")
+  is_ge <- sns %in% c(">", ">=")
+  lhs <- ifelse(sns == "=", model$rhs, ifelse(is_le, -Inf, model$rhs))
+  rhs <- ifelse(sns == "=", model$rhs, ifelse(is_le,  model$rhs, Inf))
 
   types <- if (!is.null(model$vtype)) model$vtype else rep("C", n)
-
-  opts <- list()
-  if (silent) opts$output_flag <- FALSE
 
   result <- highs::highs_solve(
     L       = model$obj,
@@ -24,7 +21,7 @@ solve_lp <- function(model, silent = TRUE) {
     rhs     = rhs,
     types   = types,
     maximum = identical(model$modelsense, "max"),
-    ...     = opts
+    control = highs::highs_control(log_to_console = FALSE)
   )
 
   list(
@@ -50,10 +47,11 @@ build_env <- function(sim) {
   env$L      <- TLPR::CartesianProductX(env$I_, env$J_)
   env$R      <- max(sim$exit_capacity)
   env$nL     <- env$nI * env$nJ
+  nSC        <- if (!is.null(sim$nSpotCarriers)) sim$nSpotCarriers else sim$nCarriers
   env$nCS    <- sim$nCarriers
-  env$nCO    <- sim$nSpotCarriers
-  env$Cb     <- matrix(sim$carrier_capacity[1L:(sim$nCarriers * sim$tau)],           nrow = sim$tau)
-  env$Co     <- matrix(sim$carrier_capacity[(sim$nCarriers * sim$tau + 1L):((sim$nCarriers + sim$nSpotCarriers) * sim$tau)], nrow = sim$tau)
+  env$nCO    <- nSC
+  env$Cb     <- matrix(sim$carrier_capacity[1L:(sim$nCarriers * sim$tau)],                    nrow = sim$tau)
+  env$Co     <- matrix(sim$carrier_capacity[(sim$nCarriers * sim$tau + 1L):((sim$nCarriers + nSC) * sim$tau)], nrow = sim$tau)
   env$nLc    <- sim$nLc
   env$L_     <- sim$Ldx
   env$nL_    <- length(sim$Ldx)
@@ -91,5 +89,6 @@ build_model <- function(env, init_state, Q, D) {
   model$rhs        <- c(init_state, model$rhs)
   model$modelsense <- "min"
   model$vtype      <- rep("I", ncol(model$A))
+  model$A          <- methods::as(model$A, "CsparseMatrix")
   model
 }

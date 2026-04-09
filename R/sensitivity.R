@@ -23,6 +23,7 @@ sensitivity_inflow <- function(sims, flow_support = seq(1000L, 3000L, by = 100L)
 
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
+  solve_lp <- solve_lp  # capture in local frame for cluster export
 
   optx <- numeric(n_instances * n_samples)
 
@@ -79,6 +80,7 @@ sensitivity_spot <- function(sims, n_samples = 1000L,
 
   cl <- parallel::makeCluster(n_cores)
   on.exit(parallel::stopCluster(cl), add = TRUE)
+  solve_lp <- solve_lp  # capture in local frame for cluster export
 
   optx <- numeric(n_instances * n_samples)
 

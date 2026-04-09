@@ -51,6 +51,14 @@ mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
                          n_scenarios = 10L) {
   .ensure_engine()
 
+  # Normalise field names from old JSON instances (lowercase winners/bids)
+  if (is.null(instance$Winners) && !is.null(instance$winners))
+    instance$Winners <- instance$winners
+  if (is.null(instance$Bids) && !is.null(instance$bids))
+    instance$Bids <- instance$bids
+  if (is.null(instance$nSpotCarriers))
+    instance$nSpotCarriers <- instance$nCarriers
+
   if (is.null(corrmat)) {
     nOD     <- instance$nOrigins + instance$nDestinations
     corrmat <- diag(nOD)

@@ -35,7 +35,7 @@ generate_instance <- function(
 
   ordx <- unlist(Winners, use.names = FALSE)
   Ldx  <- unlist(Bids[ordx], use.names = FALSE)
-  nLc  <- c(0L, sapply(Winners, function(w) length(unlist(Bids[w]))))
+  nLc  <- c(0L, cumsum(sapply(Winners, function(w) length(unlist(Bids[w])))))
 
   list(
     tau             = tau,

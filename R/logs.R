@@ -16,7 +16,6 @@ parse_logs <- function(log_dir, iterations = 1500L, n_instances = 100L) {
                                             "bound", "sim_mean", "sim_ci")))
 
   kv_pat <- "^([^:]+):\\s*(.+)$"
-  ci_pat <- "(.+) \\u00b1 (.+)"   # ±
 
   for (idx in seq_len(n_instances)) {
     log_file <- file.path(log_dir,
@@ -30,20 +29,24 @@ parse_logs <- function(log_dir, iterations = 1500L, n_instances = 100L) {
     if (length(start) == 0L) next
     summary_lines <- lines[(start + 1L):(length(lines) - 2L)]
 
-    col <- 1L
     for (line in summary_lines) {
       if (!grepl(kv_pat, line)) next
-      m     <- regmatches(line, regexec(kv_pat, line))[[1L]]
-      value <- trimws(m[3L])
+      m   <- regmatches(line, regexec(kv_pat, line))[[1L]]
+      key <- trimws(m[2L])
+      val <- trimws(m[3L])
 
-      if (grepl("\u00b1", value)) {
-        ci_m <- regmatches(value, regexec("(.+) \u00b1 (.+)", value))[[1L]]
-        results[idx, col]     <- as.numeric(trimws(ci_m[2L]))
-        results[idx, col + 1L] <- as.numeric(trimws(ci_m[3L]))
-        col <- col + 2L
-      } else {
-        results[idx, col] <- suppressWarnings(as.numeric(value))
-        col <- col + 1L
+      if (grepl("^total time", key)) {
+        results[idx, "time"] <- suppressWarnings(as.numeric(val))
+      } else if (grepl("^numeric issues", key)) {
+        results[idx, "numeric_issues"] <- suppressWarnings(as.numeric(val))
+      } else if (grepl("^best bound", key)) {
+        results[idx, "bound"] <- suppressWarnings(as.numeric(val))
+      } else if (grepl("^simulation ci", key)) {
+        ci_m <- regmatches(val, regexec("(.+) \u00b1 (.+)", val))[[1L]]
+        if (length(ci_m) == 3L) {
+          results[idx, "sim_mean"] <- as.numeric(trimws(ci_m[2L]))
+          results[idx, "sim_ci"]   <- as.numeric(trimws(ci_m[3L]))
+        }
       }
     }
   }
@@ -57,7 +60,6 @@ parse_logs <- function(log_dir, iterations = 1500L, n_instances = 100L) {
 #' @return Named list with mean/CI for time, bound bias, and CI ratio.
 #' @export
 summarise_logs <- function(log_results) {
-  n    <- nrow(log_results)
   ci95 <- function(x) 1.96 * stats::sd(x, na.rm = TRUE) / sqrt(sum(!is.na(x)))
 
   bound    <- log_results[, "bound"]
@@ -65,8 +67,8 @@ summarise_logs <- function(log_results) {
   sim_ci   <- log_results[, "sim_ci"]
   time     <- log_results[, "time"]
 
-  bias     <- (sim_mean - bound) / bound
-  ci_ratio <- sim_ci / bound
+  bias     <- (sim_mean - bound) / sim_mean
+  ci_ratio <- sim_ci / sim_mean
 
   list(
     time      = c(mean = mean(time,     na.rm = TRUE), ci = ci95(time)),
