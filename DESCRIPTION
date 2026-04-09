@@ -1,0 +1,19 @@
+Package: MSTP
+Title: Multistage Stochastic Transportation Problem via SDDP
+Version: 0.1.0
+Authors@R: person("Georgios", "Vassos", email = "georgios.vassos1@maersk.com", role = c("aut", "cre"))
+Description: R interface to a Julia/SDDP.jl engine for solving the multistage
+    stochastic transportation problem arising in drayage procurement. Handles
+    instance generation, model training, out-of-bag simulation, and policy
+    analysis entirely from R, with Julia running as a transparent backend.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Imports:
+    JuliaCall,
+    data.table,
+    ggplot2
+Suggests:
+    rhdf5,
+    jsonlite
