@@ -129,16 +129,6 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 
 ---
 
-## Reproducing paper results
-
-```r
-source(system.file("reproduce_paper.R", package = "MSTP"))
-```
-
-This generates Table 4.1 and Figures 4.3–4.4 from the paper using pre-computed log files and simulation outputs in `~/tsproj/`.
-
----
-
 ## Architecture
 
 ```
