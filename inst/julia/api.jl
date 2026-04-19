@@ -5,10 +5,14 @@ using SDDP, HiGHS
 # Build a HyperParams from a Dict passed in from R via JuliaCall.
 # R integer vectors arrive as Vector{Int32}; all casts to Int64/Float64 are
 # done here so the rest of the Julia code uses concrete types throughout.
-function build_config(p::Dict)
+function build_config(p::AbstractDict)
+    # JuliaCall passes OrderedDict{Symbol, Any}; normalise to Dict{String, Any}
+    p = Dict{String, Any}(string(k) => v for (k, v) in p)
     to_i64(x)  = Int64.(x)
     to_f64(x)  = Float64.(x)
-    to_vi64(v) = [Int64.(x) for x in v]   # Vector{Any} of int vecs → Vector{Vector{Int64}}
+    to_vi64(v) = Vector{Vector{Int64}}([
+        isa(x, AbstractArray) ? Vector{Int64}(Int64.(collect(x))) : [Int64(x)]
+        for x in v])
 
     lambda  = isa(p["lambda"], AbstractVector) ? to_f64(p["lambda"]) : [Float64(p["lambda"])]
     corrmat = Matrix{Float64}(p["corrmat"])
@@ -60,6 +64,13 @@ function train_model(config::HyperParams, iterations::Int64)
     )
 
     model
+end
+
+# ─── Bound ────────────────────────────────────────────────────────────────────
+
+# Return the SDDP lower bound (dual / Benders) after training.
+function get_bound(model::SDDP.PolicyGraph)
+    SDDP.calculate_bound(model)
 end
 
 # ─── Simulate ─────────────────────────────────────────────────────────────────

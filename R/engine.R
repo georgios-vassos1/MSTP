@@ -118,6 +118,21 @@ mstp_train <- function(config, iterations = 1500L) {
   JuliaCall::julia_call("train_model", config, as.integer(iterations))
 }
 
+# ─── Bound ────────────────────────────────────────────────────────────────────
+
+#' Return the SDDP lower bound after training
+#'
+#' Calls \code{SDDP.calculate_bound(model)} on the Julia side and returns the
+#' dual / Benders lower bound on the optimal expected cost.
+#'
+#' @param model Julia proxy returned by \code{mstp_train()}.
+#' @return Numeric scalar — SDDP lower bound.
+#' @export
+mstp_bound <- function(model) {
+  .ensure_engine()
+  as.numeric(JuliaCall::julia_call("get_bound", model))
+}
+
 # ─── Simulate ─────────────────────────────────────────────────────────────────
 
 #' Simulate the trained policy out-of-bag
