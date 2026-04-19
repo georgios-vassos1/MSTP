@@ -8,8 +8,10 @@ using SDDP, HiGHS
 function build_config(p::AbstractDict)
     # JuliaCall passes OrderedDict{Symbol, Any}; normalise to Dict{String, Any}
     p = Dict{String, Any}(string(k) => v for (k, v) in p)
-    to_i64(x)  = Int64.(x)
-    to_f64(x)  = Float64.(x)
+    to_i64(x::AbstractArray)  = Vector{Int64}(Int64.(x))
+    to_i64(x::Number)         = [Int64(x)]
+    to_f64(x::AbstractArray)  = Vector{Float64}(Float64.(x))
+    to_f64(x::Number)         = [Float64(x)]
     to_vi64(v) = Vector{Vector{Int64}}([
         isa(x, AbstractArray) ? Vector{Int64}(Int64.(collect(x))) : [Int64(x)]
         for x in v])
