@@ -111,15 +111,11 @@ mstp_gen_corrmat <- function(n_blocks, block_size, cross_corr = 0.4) {
 #'
 #' @param config      Julia proxy returned by `mstp_config()`.
 #' @param iterations  Number of SDDP training iterations (default 1500).
-#' @param solver      `"highs"` (default) or `"gurobi"`.
 #' @return An opaque Julia proxy (SDDP.PolicyGraph).
 #' @export
-mstp_train <- function(config, iterations = 1500L, solver = c("highs", "gurobi")) {
+mstp_train <- function(config, iterations = 1500L) {
   .ensure_engine()
-  solver <- match.arg(solver)
-  JuliaCall::julia_call("train_model", config,
-                         as.integer(iterations),
-                         solver)
+  JuliaCall::julia_call("train_model", config, as.integer(iterations))
 }
 
 # ─── Simulate ─────────────────────────────────────────────────────────────────

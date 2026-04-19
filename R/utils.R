@@ -1,4 +1,4 @@
-# Thin adapter: solve a Gurobi-style LP/MIP model with HiGHS.
+# Solve a JuMP/Gurobi-compatible model list with HiGHS.
 # Accepts model lists with fields: obj, A, rhs, sense, modelsense, vtype
 # Returns list with: objval, objbound, x, status
 solve_lp <- function(model) {

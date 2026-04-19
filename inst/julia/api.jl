@@ -42,7 +42,7 @@ end
 
 # Build and train the SDDP policy graph.
 # Returns the trained PolicyGraph — held as a Julia-side proxy in R.
-function train_model(config::HyperParams, iterations::Int64, solver::String="highs")
+function train_model(config::HyperParams, iterations::Int64)
     optimizer = HiGHS.Optimizer
 
     model = SDDP.PolicyGraph(
@@ -134,10 +134,9 @@ end
 
 # Convenience: train and simulate a list of configs in one call.
 # Returns a Vector of result Dicts (one per instance).
-function batch_run(configs::Vector{HyperParams}, iterations::Int64,
-                   trials::Int64, solver::String="highs")
+function batch_run(configs::Vector{HyperParams}, iterations::Int64, trials::Int64)
     map(configs) do config
-        model = train_model(config, iterations, solver)
+        model = train_model(config, iterations)
         simulate_model(model, config, trials)
     end
 end

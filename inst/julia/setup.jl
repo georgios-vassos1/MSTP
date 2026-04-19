@@ -15,13 +15,5 @@ pkgs = [
 ]
 
 Pkg.add(pkgs)
-
-# Gurobi requires a valid licence; install but do not error if unavailable
-try
-    Pkg.add("Gurobi")
-catch e
-    @warn "Gurobi could not be installed — falling back to HiGHS will still work." e
-end
-
 Pkg.precompile()
 println("MSTP Julia engine setup complete.")
