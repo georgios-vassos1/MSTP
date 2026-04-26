@@ -157,6 +157,82 @@ mstp_bound <- function(model) {
 #'     \item{tau, trials, nOrigins, nDestinations, nLanes, nSpotLanes}{Dims.}
 #'   }
 #' @export
+#' Extract expected carrier capacity duals from a trained SDDP model
+#'
+#' Runs `n_samples` forward simulations and collects the dual variable of each
+#' carrier capacity constraint at every stage. The returned vector has the same
+#' flat layout as `instance$carrier_capacity` — index `(k-1)*tau + t` for
+#' carrier `k` at stage `t` — so it can be used directly as the gradient
+#' `∂V/∂carrier_capacity` in a capacity optimisation loop.
+#'
+#' Because duals of a minimisation ≤ constraint are non-positive, the gradient
+#' of `V(x) + v·x` with respect to `x` is `cap_duals + v`.
+#'
+#' @param model     Julia proxy returned by `mstp_train()`.
+#' @param config    Julia proxy returned by `mstp_config()`.
+#' @param n_samples Number of simulation trajectories used to average the duals.
+#' @return Numeric vector of length `(nCarriers + nSpotCarriers) * tau`.
+#' @export
+#' Write SDDP Benders cuts to a file
+#'
+#' Persists the cuts from a trained model so they can be reloaded into a new
+#' model via `mstp_train_warm()`. Cuts are keyed by stage and state-variable
+#' names, so they remain valid when only `carrier_capacity` changes between
+#' calls (the inventory state variables are unchanged).
+#'
+#' @param model Julia proxy returned by `mstp_train()` or `mstp_train_warm()`.
+#' @param path  File path for the cuts JSON (created or overwritten).
+#' @return `path`, invisibly.
+#' @export
+mstp_write_cuts <- function(model, path) {
+  .ensure_engine()
+  JuliaCall::julia_call("write_cuts", model, as.character(path))
+  invisible(path)
+}
+
+#' Train an SDDP policy with a warm start from existing cuts
+#'
+#' Builds a new `PolicyGraph` from `config`, loads Benders cuts from
+#' `cuts_path`, then continues training. Because cuts are functions of the
+#' inventory state variables (not of `carrier_capacity`), they transfer
+#' correctly across capacity changes and dramatically reduce the iterations
+#' needed for the lower bound to tighten.
+#'
+#' @param config      Julia proxy returned by `mstp_config()`.
+#' @param iterations  Additional SDDP iterations to run after loading cuts.
+#' @param cuts_path   Path to a cuts file written by `mstp_write_cuts()`.
+#' @return An opaque Julia proxy (SDDP.PolicyGraph).
+#' @export
+mstp_train_warm <- function(config, iterations, cuts_path) {
+  .ensure_engine()
+  JuliaCall::julia_call("train_model_warm", config, as.integer(iterations),
+                         as.character(cuts_path))
+}
+
+mstp_capacity_duals <- function(model, config, n_samples = 100L) {
+  .ensure_engine()
+  result <- JuliaCall::julia_call("simulate_cap_duals", model, config,
+                                   as.integer(n_samples))
+  as.numeric(result$duals)
+}
+
+#' Return a copy of an instance with updated carrier capacities
+#'
+#' Replaces `instance$carrier_capacity` with the supplied vector (rounded to
+#' integers) and returns the modified instance list. Use this to build a new
+#' `mstp_config()` at a candidate capacity `x` during optimisation.
+#'
+#' @param instance Named list as returned by `generate_instance()` or
+#'   `load_instances()`.
+#' @param carrier_capacity Numeric vector of length
+#'   `(nCarriers + nSpotCarriers) * tau` — the new flat capacity vector.
+#' @return A copy of `instance` with `carrier_capacity` replaced.
+#' @export
+mstp_update_capacity <- function(instance, carrier_capacity) {
+  instance$carrier_capacity <- as.integer(round(carrier_capacity))
+  instance
+}
+
 mstp_simulate <- function(model, config, trials = 1000L) {
   .ensure_engine()
   result <- JuliaCall::julia_call("simulate_model", model, config,

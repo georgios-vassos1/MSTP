@@ -21,8 +21,8 @@ function transportation_t(sp::Model, stage::Int64; config::HyperParams)
 
     ## Constraints
 
-    # Carrier capacity (contracted + spot)
-    @constraint(sp, [k = 1:(config.nCarriers + config.nSpotCarriers)],
+    # Carrier capacity (contracted + spot); named `cap` for dual extraction
+    @constraint(sp, cap[k = 1:(config.nCarriers + config.nSpotCarriers)],
         sum(move[config.CarrierIdx[k]]) <= config.carrier_capacity[(k-1)*config.tau + stage])
 
     # Entry: total outbound moves <= available stock + inflow

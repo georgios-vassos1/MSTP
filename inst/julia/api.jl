@@ -68,6 +68,39 @@ function train_model(config::HyperParams, iterations::Int64)
     model
 end
 
+# ─── Warm-start helpers ───────────────────────────────────────────────────────
+
+# Persist Benders cuts to a JSON file so they can be reloaded into a new model.
+function write_cuts(model::SDDP.PolicyGraph, path::String)
+    SDDP.write_cuts_to_file(model, path)
+    nothing
+end
+
+# Build a new model with updated config, seed it with cuts from a previous run,
+# then continue training.  Cuts are valid across capacity changes because they
+# are functions of the inventory state variables, not of carrier_capacity.
+function train_model_warm(config::HyperParams, iterations::Int64, cuts_path::String)
+    optimizer = HiGHS.Optimizer
+
+    model = SDDP.PolicyGraph(
+        (sp, stage) -> transportation_t(sp, stage; config = config),
+        SDDP.LinearGraph(config.tau);
+        sense       = :Min,
+        lower_bound = 0.0,
+        optimizer   = optimizer,
+    )
+
+    SDDP.read_cuts_from_file(model, cuts_path)
+
+    SDDP.train(model;
+        iteration_limit = iterations,
+        cut_type        = SDDP.SINGLE_CUT,
+        parallel_scheme = SDDP.Threaded(),
+    )
+
+    model
+end
+
 # ─── Bound ────────────────────────────────────────────────────────────────────
 
 # Return the SDDP lower bound (dual / Benders) after training.
@@ -141,6 +174,38 @@ function simulate_model(model::SDDP.PolicyGraph, config::HyperParams, trials::In
         "nLanes"        => config.nLanes,
         "nSpotLanes"    => config.nSpotLanes,
     )
+end
+
+# ─── Capacity duals ───────────────────────────────────────────────────────────
+
+# Simulate n_samples trajectories and collect the dual of each carrier capacity
+# constraint at every stage.  Returns a flat Float64 vector of length
+# (nCarriers + nSpotCarriers) * tau with the same (k-1)*tau + stage indexing as
+# carrier_capacity, so it can be used directly as ∂V/∂carrier_capacity.
+#
+# Uses the default InSampleMonteCarlo sampling scheme (same noise distribution as
+# training) and runs sequentially to avoid thread-safety issues with dual().
+function simulate_cap_duals(model::SDDP.PolicyGraph, config::HyperParams, n_samples::Int64)
+    nK    = config.nCarriers + config.nSpotCarriers
+    duals = zeros(Float64, nK * config.tau)
+
+    sims = SDDP.simulate(
+        model, n_samples,
+        custom_recorders = Dict{Symbol, Function}(
+            :cap_duals => sp -> Float64[JuMP.dual(sp[:cap][k]) for k in 1:nK]
+        ),
+    )
+
+    for sim in sims
+        for (t, node) in enumerate(sim)
+            for k in 1:nK
+                duals[(k - 1) * config.tau + t] += node[:cap_duals][k]
+            end
+        end
+    end
+    duals ./= n_samples
+
+    Dict("duals" => duals, "nK" => Int64(nK), "tau" => Int64(config.tau))
 end
 
 # ─── Batch train + simulate ───────────────────────────────────────────────────
