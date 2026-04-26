@@ -92,12 +92,14 @@ instances <- load_instances("path/to/instances/", n_instances = 100L)
 
 ```
 generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──►  mstp_simulate()
-       │                                                                │
-  (or load JSON)                                                        │
-                                                              ┌─────────┴──────────┐
-                                                              │                    │
-                                                        compute_regret()    compute_vss()
-                                                        plot_regret()
+       │                        ▲                   │                    │
+  (or load JSON)                │             mstp_write_cuts()          │
+                                │                   │             ┌──────┴──────────┐
+                    mstp_update_capacity()          ▼             │                 │
+                                │           mstp_train_warm()  compute_regret()  compute_vss()
+                                │                   │             plot_regret()
+                                └── mstp_capacity_duals() ◄───────┘
+                                    (projected gradient loop)
 ```
 
 | Step | Function | Description |
@@ -107,7 +109,11 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 | Config | `mstp_config()` | Build Julia `HyperParams` from an instance |
 | Config | `mstp_gen_corrmat()` | Generate block-diagonal correlation matrix |
 | Train | `mstp_train()` | Train SDDP policy (returns opaque Julia proxy) |
+| Train | `mstp_train_warm()` | Rebuild model with new config, load saved cuts, continue training |
+| Train | `mstp_write_cuts()` | Persist Benders cuts to JSON for warm-starting |
 | Simulate | `mstp_simulate()` | Out-of-bag simulation; returns costs, inventory, allocations |
+| Cap. opt. | `mstp_capacity_duals()` | Extract ∂V/∂carrier_capacity from SDDP constraint duals |
+| Cap. opt. | `mstp_update_capacity()` | Return instance copy with updated `carrier_capacity` vector |
 | Analysis | `compute_regret()` | SDDP cost vs clairvoyant LP — how far from perfect information |
 | Analysis | `compute_vss()` | SDDP cost vs myopic policy — gain of recourse |
 | Analysis | `sensitivity_inflow()` | Optimal cost distribution under random inflow draws |
@@ -126,6 +132,8 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 **Regret** (`compute_regret`): compares SDDP cost against the clairvoyant LP that knows all future realisations. This bounds how far the learned policy is from the theoretical optimum. At 1500 iterations the mean regret is ~4×10⁻⁶ (essentially zero relative regret).
 
 **SDDP convergence** (`parse_logs` / `summarise_logs`): the simulation CI narrows with iterations. At 1500 iterations: bias ≈ 15.7%, CI ratio ≈ 9.6%, wall time ≈ 118 s per instance (100-instance benchmark).
+
+**Capacity optimisation** (`mstp_capacity_duals` / `mstp_update_capacity` / `mstp_write_cuts` / `mstp_train_warm`): first-stage carrier capacity can be optimised via projected subgradient descent. The dual of each carrier capacity constraint (`∂V/∂carrier_capacity`) is averaged over simulated trajectories and used as the gradient. Benders cuts are functions of inventory state variables (not of `carrier_capacity`), so they transfer correctly across capacity changes — `mstp_write_cuts` / `mstp_train_warm` exploit this to warm-start each outer iteration cheaply. On a 6×6×20 instance (τ=12), six gradient steps of ~5 s each reduce total cost (operational + reservation) by ~20%.
 
 ---
 
@@ -146,7 +154,7 @@ Julia (inst/julia/)
 ├── types.jl        HyperParams struct (plain types, R-compatible)
 ├── model.jl        SDDP stage subproblem (JuMP)
 ├── utils.jl        Correlated Poisson sampling
-├── api.jl          build_config / train_model / simulate_model / batch_run
+├── api.jl          build_config / train_model / train_model_warm / write_cuts / simulate_model / simulate_cap_duals / batch_run
 └── setup.jl        Julia package installation
 ```
 
