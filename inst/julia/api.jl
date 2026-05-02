@@ -1,4 +1,4 @@
-using SDDP, HiGHS
+using SDDP, HiGHS, JuMP
 
 # ─── Config ──────────────────────────────────────────────────────────────────
 
@@ -46,25 +46,100 @@ end
 
 # ─── Train ────────────────────────────────────────────────────────────────────
 
-# Build and train the SDDP policy graph.
-# Returns the trained PolicyGraph — held as a Julia-side proxy in R.
-function train_model(config::HyperParams, iterations::Int64)
-    optimizer = HiGHS.Optimizer
+# Shared HiGHS optimizer settings.  Primal simplex (strategy=4) avoids the
+# OPTIMAL+INFEASIBLE_POINT status that dual simplex can emit when cut
+# coefficients span many orders of magnitude.  Scale strategy 4 (max-value
+# scaling) normalises the LP matrix before each solve.
+# dual_feasibility_tolerance tightened to 1e-9 so that LP duals with
+# |value| < 1e-9 are rounded to zero before being used as Benders cut
+# coefficients — this prevents the 1e-12 "ghost" slopes that cause the
+# lower bound to overshoot the upper bound on long horizons (τ=26, 52).
+function _make_optimizer()
+    optimizer_with_attributes(
+        HiGHS.Optimizer,
+        "output_flag"                  => false,
+        "simplex_scale_strategy"       => 4,
+        "simplex_strategy"             => 4,
+        "primal_feasibility_tolerance" => 1e-7,
+        "dual_feasibility_tolerance"   => 1e-9,
+    )
+end
 
-    model = SDDP.PolicyGraph(
+# Rebuild a fresh PolicyGraph with the given config and optimizer.
+function _make_model(config::HyperParams)
+    SDDP.PolicyGraph(
         (sp, stage) -> transportation_t(sp, stage; config = config),
         SDDP.LinearGraph(config.tau);
         sense       = :Min,
         lower_bound = 0.0,
-        optimizer   = optimizer,
+        optimizer   = _make_optimizer(),
     )
+end
 
-    SDDP.train(model;
-        iteration_limit = iterations,
-        cut_type        = SDDP.SINGLE_CUT,
-        parallel_scheme = SDDP.Threaded(),
-    )
+# Train the SDDP policy graph using a crash-resilient batched loop.
+#
+# Strategy
+# --------
+# Each batch of `batch_size` iterations is wrapped in a try-catch.  After
+# every successful batch the Benders cuts are checkpointed to a temp file.
+# If HiGHS returns OPTIMAL+INFEASIBLE_POINT and SDDP throws, we:
+#   1. Rebuild a fresh PolicyGraph (clears all JuMP state).
+#   2. Reload cuts from the last good checkpoint (preserving convergence).
+#   3. Retry the *same* batch up to MAX_RETRIES times — new RNG state usually
+#      yields a different (better-conditioned) scenario draw that avoids crash.
+#   4. If MAX_RETRIES exhausted, discard the checkpoint (cut coefficients may
+#      be numerically bad), rebuild completely fresh, and advance past the
+#      failed iteration to break the retry loop.
+#
+# cut_deletion_minimum = 10 aggressively prunes dominated cuts, keeping the
+# LP matrix small and reducing the chance of near-zero coefficient buildup.
+# This is important for capacity-optimisation runs where capacity changes
+# between gradient steps can make older cuts near-degenerate.
+#
+# Returns the trained PolicyGraph — held as a Julia-side proxy in R.
+function train_model(config::HyperParams, iterations::Int64;
+                     batch_size::Int64 = 1,
+                     max_retries::Int64 = 3)
+    model       = _make_model(config)
+    ckpt        = tempname() * ".cuts.json"
+    completed   = 0
+    has_ckpt    = false
+    retries     = 0
 
+    while completed < iterations
+        to_do = min(batch_size, iterations - completed)
+        try
+            SDDP.train(model;
+                iteration_limit      = to_do,
+                cut_type             = SDDP.SINGLE_CUT,
+                parallel_scheme      = SDDP.Serial(),
+                cut_deletion_minimum = 10,
+                add_to_existing_cuts = completed > 0,
+            )
+            completed += to_do
+            SDDP.write_cuts_to_file(model, ckpt)
+            has_ckpt = true
+            retries  = 0   # reset on success
+        catch e
+            retries += 1
+            if retries <= max_retries
+                @warn "SDDP numerical crash at completed=$completed (retry $retries/$max_retries): $(sprint(showerror, e)). Rebuilding from checkpoint."
+                model = _make_model(config)
+                if has_ckpt
+                    SDDP.read_cuts_from_file(model, ckpt)
+                end
+                # Do NOT advance `completed` — retry same batch with new RNG state.
+            else
+                @warn "SDDP numerical crash at completed=$completed: max retries ($max_retries) exhausted. Discarding checkpoint and advancing."
+                model    = _make_model(config)   # completely fresh, no cuts
+                has_ckpt = false
+                completed += to_do               # skip this batch to break loop
+                retries  = 0
+            end
+        end
+    end
+
+    has_ckpt && isfile(ckpt) && rm(ckpt; force = true)
     model
 end
 
@@ -80,24 +155,15 @@ end
 # then continue training.  Cuts are valid across capacity changes because they
 # are functions of the inventory state variables, not of carrier_capacity.
 function train_model_warm(config::HyperParams, iterations::Int64, cuts_path::String)
-    optimizer = HiGHS.Optimizer
-
-    model = SDDP.PolicyGraph(
-        (sp, stage) -> transportation_t(sp, stage; config = config),
-        SDDP.LinearGraph(config.tau);
-        sense       = :Min,
-        lower_bound = 0.0,
-        optimizer   = optimizer,
-    )
-
+    model = _make_model(config)
     SDDP.read_cuts_from_file(model, cuts_path)
-
     SDDP.train(model;
-        iteration_limit = iterations,
-        cut_type        = SDDP.SINGLE_CUT,
-        parallel_scheme = SDDP.Threaded(),
+        iteration_limit      = iterations,
+        cut_type             = SDDP.SINGLE_CUT,
+        parallel_scheme      = SDDP.Serial(),
+        cut_deletion_minimum = 100,
+        add_to_existing_cuts = true,
     )
-
     model
 end
 
@@ -124,7 +190,7 @@ function simulate_model(model::SDDP.PolicyGraph, config::HyperParams, trials::In
         model, trials,
         [:move, :inflow, :outflow, :entry, :exitp, :exitm];
         sampling_scheme = SDDP.Historical(oob),
-        parallel_scheme = SDDP.Threaded(),
+        parallel_scheme = SDDP.Serial(),
     )
 
     # Total cost per simulation (length = trials)

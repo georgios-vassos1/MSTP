@@ -14,14 +14,19 @@ function gen_cov_mat(n_blocks::Int64, block_size::Int64, cross_corr::Float64=0.0
     covmat
 end
 
+# Clamp CDF values to (ε, 1−ε) so that Poisson quantile never returns Inf.
+# Gaussian tails beyond ≈ ±8σ map to floating-point 0/1, causing infinite
+# Poisson quantiles and LP infeasibility in the SDDP subproblems.
+const _PCLAMP = 1e-10
+
 # Sample N correlated Poisson scenario vectors — returns Vector{Vector{Int64}}
 # Used for SDDP training: each element is one scenario (nOrigins + nDestinations values)
 function sample_scenarios(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
-    [vec(quantile.(Poisson.(lambda), cdf.(Normal(), rand(MvNormal(corrmat), 1)))) for _ in 1:N]
+    [vec(quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), 1)), _PCLAMP, 1.0 - _PCLAMP))) for _ in 1:N]
 end
 
 # Sample N correlated Poisson scenarios — returns Matrix (N × dim)
 # Used for bulk/OOB sampling
 function sample_scenarios_mat(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
-    quantile.(Poisson.(lambda), cdf.(Normal(), rand(MvNormal(corrmat), N)))'
+    quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), N)), _PCLAMP, 1.0 - _PCLAMP))'
 end
