@@ -65,14 +65,15 @@ inst <- generate_instance(
   nOrigins      = 6L,
   nDestinations = 6L,
   nCarriers     = 20L,
-  seed          = 1L
+  seed          = 1L,
+  lambda        = 50.0   # Poisson demand rate; calibrates carrier capacities
 )
 
 # 3. Build the SDDP configuration
-config <- mstp_config(inst, lambda = 2000.0)
+config <- mstp_config(inst, lambda = 50.0)
 
 # 4. Train the policy (returns a Julia proxy)
-model <- mstp_train(config, iterations = 1500L)
+model <- mstp_train(config, iterations = 300L)
 
 # 5. Simulate out-of-bag performance
 sims <- mstp_simulate(model, config, trials = 1000L)
@@ -104,7 +105,7 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 
 | Step | Function | Description |
 |------|----------|-------------|
-| Instance | `generate_instance()` | Random MSTP instance (network, costs, capacities) |
+| Instance | `generate_instance()` | Random MSTP instance; capacities calibrated to `lambda` at `target_util` utilisation |
 | Instance | `load_instances()` | Load batch from JSON files |
 | Config | `mstp_config()` | Build Julia `HyperParams` from an instance |
 | Config | `mstp_gen_corrmat()` | Generate block-diagonal correlation matrix |
@@ -129,11 +130,11 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 
 **Gain of recourse** (`compute_vss`): compares the adaptive SDDP policy against a myopic (greedy) policy that optimises each period in isolation. A gain of ~27% means the stochastic policy cuts costs by roughly a quarter relative to myopic dispatch.
 
-**Regret** (`compute_regret`): compares SDDP cost against the clairvoyant LP that knows all future realisations. This bounds how far the learned policy is from the theoretical optimum. At 1500 iterations the mean regret is ~4×10⁻⁶ (essentially zero relative regret).
+**Regret** (`compute_regret`): compares SDDP cost against the clairvoyant LP that knows all future realisations. This bounds how far the learned policy is from the theoretical optimum. On 6×6×20 instances (τ=12, λ=50) mean regret is below 1.5% at 300 iterations (~90 s), and stable from 250 iterations onward — making regret a reliable stopping criterion.
 
-**SDDP convergence** (`parse_logs` / `summarise_logs`): the simulation CI narrows with iterations. At 1500 iterations: bias ≈ 15.7%, CI ratio ≈ 9.6%, wall time ≈ 118 s per instance (100-instance benchmark).
+**SDDP convergence** (`parse_logs` / `summarise_logs`): the simulation CI narrows with iterations. On the 6×6×20 benchmark: training completes in ~90 s at 300 iterations; scalability experiments reach 40×40×100 instances in under 15 minutes at 20 iterations using the open-source HiGHS solver.
 
-**Capacity optimisation** (`mstp_capacity_duals` / `mstp_update_capacity` / `mstp_write_cuts` / `mstp_train_warm`): first-stage carrier capacity can be optimised via projected subgradient descent. The dual of each carrier capacity constraint (`∂V/∂carrier_capacity`) is averaged over simulated trajectories and used as the gradient. Benders cuts are functions of inventory state variables (not of `carrier_capacity`), so they transfer correctly across capacity changes — `mstp_write_cuts` / `mstp_train_warm` exploit this to warm-start each outer iteration cheaply. On a 6×6×20 instance (τ=12), six gradient steps of ~5 s each reduce total cost (operational + reservation) by ~20%.
+**Capacity optimisation** (`mstp_capacity_duals` / `mstp_update_capacity` / `mstp_write_cuts` / `mstp_train_warm`): first-stage carrier capacity can be optimised via projected subgradient descent. The dual of each carrier capacity constraint (`∂V/∂carrier_capacity`) is averaged over simulated trajectories and used as the gradient. Benders cuts are functions of inventory state variables (not of `carrier_capacity`), so they transfer correctly across capacity changes — `mstp_write_cuts` / `mstp_train_warm` exploit this to warm-start each outer iteration cheaply. On a 6×6×20 instance (τ=12, λ=50), 15 gradient steps reduce total procurement cost by 8.4% relative to default capacities — versus a 32.3% cost *increase* from a deterministic LP proxy, a 40.7 pp advantage attributable to variance-aware gradient estimation.
 
 ---
 
@@ -154,7 +155,7 @@ Julia (inst/julia/)
 ├── types.jl        HyperParams struct (plain types, R-compatible)
 ├── model.jl        SDDP stage subproblem (JuMP)
 ├── utils.jl        Correlated Poisson sampling
-├── api.jl          build_config / train_model / train_model_warm / write_cuts / simulate_model / simulate_cap_duals / batch_run
+├── api.jl          build_config / train_model (batched, crash-resilient) / train_model_warm / write_cuts / simulate_model / simulate_cap_duals / batch_run
 └── setup.jl        Julia package installation
 ```
 
