@@ -133,6 +133,37 @@ mstp_bound <- function(model) {
   as.numeric(JuliaCall::julia_call("get_bound", model))
 }
 
+#' Check whether the SDDP lower bound is numerically valid
+#'
+#' A valid SDDP lower bound for a minimisation satisfies
+#' \code{bound <= E[policy cost]}. This runs an in-sample Monte-Carlo
+#' simulation to estimate \code{E[policy cost]} and flags the bound as invalid
+#' when it exceeds the simulated mean by more than \code{z} standard errors.
+#' Use it to detect the ghost-cut overshoot (LB > UB) that arises from
+#' ill-conditioned LP duals on long horizons / large instances, so an invalid
+#' bound is never reported silently.
+#'
+#' @param model   Julia proxy returned by \code{mstp_train()}.
+#' @param config  Julia proxy returned by \code{mstp_config()}.
+#' @param trials  Number of in-sample simulations (default 200).
+#' @param z       Standard-error margin allowed before flagging (default 3).
+#' @return A named list: \code{bound}, \code{sim_mean}, \code{sim_se},
+#'   \code{margin_se} (SEs the bound sits above the mean; positive = overshoot),
+#'   \code{trials}, and \code{valid} (logical).
+#' @export
+mstp_validate_bound <- function(model, config, trials = 200L, z = 3.0) {
+  .ensure_engine()
+  res <- JuliaCall::julia_call("validate_bound", model, config,
+                               trials = as.integer(trials), z = as.numeric(z))
+  res$valid     <- as.logical(res$valid)
+  res$bound     <- as.numeric(res$bound)
+  res$sim_mean  <- as.numeric(res$sim_mean)
+  res$sim_se    <- as.numeric(res$sim_se)
+  res$margin_se <- as.numeric(res$margin_se)
+  res$trials    <- as.integer(res$trials)
+  res
+}
+
 # ─── Simulate ─────────────────────────────────────────────────────────────────
 
 #' Simulate the trained policy out-of-bag

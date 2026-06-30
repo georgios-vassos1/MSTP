@@ -30,11 +30,15 @@
 #'   mix: some carriers are tight (util < 1, capacity < expected load) and some
 #'   have slack (util > 1).
 #' @param entry_capacity  Integer vector of length `nOrigins` giving the maximum
-#'   entry stock at each origin.  Defaults to 10000 at every origin.  Set to a
-#'   large value (e.g. `rep(1e6L, nOrigins)`) when long horizons or high demand
-#'   rates would otherwise make the constraint binding.
+#'   entry stock at each origin.  Defaults to the physical "hold-everything"
+#'   bound `ceil(lambda * tau)` — the most inventory that could accumulate if
+#'   every unit entering over the horizon were held — which keeps the storage
+#'   constraint non-binding without inflating the LP right-hand-side range.
+#'   (Previously a flat 10000, with guidance to use 1e6 on long horizons; that
+#'   1e6 value drove the rhs range to ~1e6 and degraded SDDP cut conditioning,
+#'   contributing to the lower-bound overshoot — see `api.jl` ghost-slope note.)
 #' @param exit_capacity   Integer vector of length `nDestinations` giving the
-#'   maximum exit stock at each destination.  Same default and guidance as
+#'   maximum exit stock at each destination.  Same default and rationale as
 #'   `entry_capacity`.
 #' @return A named list suitable for `mstp_config()`.
 #' @export
@@ -50,10 +54,19 @@ generate_instance <- function(
     target_util     = 0.8,
     util_lo         = 0.5,
     util_hi         = 1.5,
-    entry_capacity  = rep(10000L, nOrigins),
-    exit_capacity   = rep(10000L, nDestinations)
+    entry_capacity  = NULL,
+    exit_capacity   = NULL
 ) {
   if (!is.null(seed)) set.seed(seed)
+
+  # Physical "hold-everything" storage bound: the most inventory that can
+  # accumulate at a node is everything that could enter over the whole horizon,
+  # ~ lambda * tau. This keeps the storage constraint non-binding while keeping
+  # the LP rhs range as small as possible (better SDDP cut conditioning) and
+  # removes the need for arbitrary large caps (e.g. 1e6) on long horizons.
+  hold_all <- as.integer(ceiling(max(lambda) * tau))
+  if (is.null(entry_capacity)) entry_capacity <- rep(hold_all, nOrigins)
+  if (is.null(exit_capacity))  exit_capacity  <- rep(hold_all, nDestinations)
 
   nLanes <- nOrigins * nDestinations
 

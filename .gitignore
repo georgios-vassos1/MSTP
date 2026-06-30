@@ -1,2 +1,66 @@
+# ─── MSTP .gitignore ──────────────────────────────────────────────────────────
+
+# ── SDDP / solver run artifacts ──────────────────────────────────────────────
 SDDP.log
+SDDP*.log
+# Infeasibility / debug dumps written to cwd by SDDP.jl on a numerical crash
+model_infeasible_node_*.cuts.json
+subproblem_*.mof.json
+*.mof.json
+# Benders cut checkpoints (regenerable; real saves go to explicit/tmp paths)
+*.cuts.json
+
+# ── Working notes / scratch (not part of the package) ────────────────────────
+CHANGES-*.md
+scratch/
+tmp/
+*.tmp
+*.bak
+*.orig
+
+# ── R artifacts ──────────────────────────────────────────────────────────────
+.Rproj.user/
+.Rhistory
+.RData
+.Rapp.history
+.Ruserdata
+*.Rproj
+*.Rcheck/
+# Compiled artifacts (if a src/ is ever added)
+src/*.o
+src/*.so
+src/*.dll
+*.o
+*.so
+*.dll
+# testthat scratch (the tests/ sources themselves stay tracked)
+tests/testthat/_snaps/
+tests/testthat/Rplots.pdf
+
+# ── Julia artifacts ──────────────────────────────────────────────────────────
+Manifest.toml
+.julia/
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+
+# ── Data / large generated outputs ───────────────────────────────────────────
+*.h5
+*.hdf5
+*.rds
+*.RDS
+output/
+results/
+figures/
+*.log
+
+# ── Editor / OS ──────────────────────────────────────────────────────────────
+.DS_Store
+*~
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Legacy / venue-specific (pre-existing) ───────────────────────────────────
 *_xx.R
