@@ -1,93 +1,113 @@
 #' Generate a random MSTP instance
 #'
 #' Produces a named list representing one problem instance: network structure
-#' (bids, winners), initial stocks, capacities, and cost coefficients. The
-#' list can be passed directly to `mstp_config()`.
+#' (awarded lanes per carrier), initial stocks, capacities, and cost
+#' coefficients. The list can be passed directly to `mstp_config()`.
 #'
-#' Carrier capacities are calibrated to `lambda` so that the average contracted
+#' Carrier structure (important for numerical stability). Each origin-destination
+#' lane is awarded to a SMALL number of carriers (`carriers_per_lane`, default 2)
+#' with DISTINCT base rates spaced across `[rate_lo, rate_hi]`. This mirrors real
+#' drayage — a lane is served by a few rate-differentiated carriers — and, unlike
+#' assigning many near-identical carriers to every lane, it avoids the massive
+#' primal degeneracy that produces unstable LP duals, ghost Benders-cut slopes,
+#' and an invalid SDDP lower bound at long horizons / large instances. The total
+#' number of carriers can still be large (scalability); only the per-lane overlap
+#' is kept small.
+#'
+#' Carrier capacities are calibrated to `lambda` so the average contracted
 #' carrier operates at roughly `target_util` utilisation (default 80%).
-#' Heterogeneity is introduced by drawing per-carrier utilisation multipliers
-#' from Uniform(util_lo, util_hi), producing a realistic mix of tight and slack
-#' carriers.  Spot carriers are priced above contracted rates (reflecting the
-#' real Chicago market: contracted median ~$680/TEU, spot ~30-50% higher) and
-#' given enough capacity to cover moderate overflow.
+#' Spot carriers are priced above contracted rates and given finite capacity for
+#' overflow relief.
 #'
 #' @param tau             Number of time periods.
 #' @param nOrigins        Number of origin nodes.
 #' @param nDestinations   Number of destination nodes.
 #' @param nCarriers       Number of contracted carriers.
 #' @param nSpotCarriers   Number of spot carriers (defaults to `nCarriers`).
-#' @param nBids           Number of bids in the combinatorial auction.
+#' @param carriers_per_lane Number of contracted carriers awarded each lane
+#'   (default 2). Keep small (1-3) to avoid LP degeneracy; clamped to
+#'   `[1, nCarriers]`.
 #' @param seed            Optional integer random seed for reproducibility.
-#' @param lambda          Expected demand per origin per period. Used to
-#'   calibrate carrier capacities so that constraints are genuinely informative.
-#'   Defaults to 700 (consistent with medium Illinois hub cluster).
-#' @param target_util     Target mean utilisation for contracted carriers
-#'   (capacity / expected per-carrier load). Default 0.8 means carriers are
-#'   slightly under-provisioned on average, ensuring some constraints bind.
-#' @param util_lo,util_hi Lower and upper bounds of the per-carrier utilisation
-#'   multiplier drawn uniformly. Default Uniform(0.5, 1.5) produces a realistic
-#'   mix: some carriers are tight (util < 1, capacity < expected load) and some
-#'   have slack (util > 1).
-#' @param entry_capacity  Integer vector of length `nOrigins` giving the maximum
-#'   entry stock at each origin.  Defaults to 10000 at every origin.  Set to a
-#'   large value (e.g. `rep(1e6L, nOrigins)`) when long horizons or high demand
-#'   rates would otherwise make the constraint binding.
-#' @param exit_capacity   Integer vector of length `nDestinations` giving the
-#'   maximum exit stock at each destination.  Same default and guidance as
-#'   `entry_capacity`.
+#' @param lambda          Expected demand per origin per period, used to
+#'   calibrate carrier capacities. Defaults to 700.
+#' @param target_util     Target mean utilisation for contracted carriers.
+#' @param util_lo,util_hi Bounds of the per-carrier utilisation multiplier.
+#' @param rate_lo,rate_hi Range over which distinct contracted base rates are
+#'   spaced (spot rates are drawn above `rate_hi`).
+#' @param store_periods   Storage capacity expressed as this many periods of
+#'   demand (`ceil(store_periods * lambda)`). Default 20 keeps the buffer
+#'   non-binding without the absurdly large (e.g. 1e6) values that wreck the LP
+#'   right-hand-side conditioning.
+#' @param entry_capacity,exit_capacity Optional explicit storage caps (override
+#'   the `store_periods` default).
 #' @return A named list suitable for `mstp_config()`.
 #' @export
 generate_instance <- function(
-    tau             = 12L,
-    nOrigins        = 6L,
-    nDestinations   = 6L,
-    nCarriers       = 20L,
-    nSpotCarriers   = nCarriers,
-    nBids           = 10L,
-    seed            = NULL,
-    lambda          = 700.0,
-    target_util     = 0.8,
-    util_lo         = 0.5,
-    util_hi         = 1.5,
-    entry_capacity  = rep(10000L, nOrigins),
-    exit_capacity   = rep(10000L, nDestinations)
+    tau               = 12L,
+    nOrigins          = 6L,
+    nDestinations     = 6L,
+    nCarriers         = 20L,
+    nSpotCarriers     = nCarriers,
+    carriers_per_lane = 2L,
+    seed              = NULL,
+    lambda            = 700.0,
+    target_util       = 0.8,
+    util_lo           = 0.5,
+    util_hi           = 1.5,
+    rate_lo           = 6.0,
+    rate_hi           = 8.0,
+    store_periods     = 20.0,
+    entry_capacity    = NULL,
+    exit_capacity     = NULL
 ) {
   if (!is.null(seed)) set.seed(seed)
 
   nLanes <- nOrigins * nDestinations
+  k      <- max(1L, min(as.integer(carriers_per_lane), nCarriers))
 
-  Bids    <- replicate(nBids,
-               sample(nLanes, size = sample(6L:18L, 1L), replace = FALSE),
-               simplify = FALSE)
-  Winners <- replicate(nCarriers,
-               sample(nBids, size = sample(1L:2L, 1L), replace = FALSE),
-               simplify = FALSE)
+  # Award each lane to k distinct carriers (low overlap → well-conditioned LP).
+  carrier_lanes <- vector("list", nCarriers)
+  for (lane in seq_len(nLanes)) {
+    for (c in sample.int(nCarriers, k)) carrier_lanes[[c]] <- c(carrier_lanes[[c]], lane)
+  }
+  # Guarantee every carrier has at least one lane.
+  for (c in seq_len(nCarriers))
+    if (length(carrier_lanes[[c]]) == 0L)
+      carrier_lanes[[c]] <- sample.int(nLanes, 1L)
+
+  # One bid per carrier = its awarded lane set; carrier c wins bid c.
+  Bids    <- lapply(carrier_lanes, sort)
+  Winners <- as.list(seq_len(nCarriers))
 
   ordx <- unlist(Winners, use.names = FALSE)
   Ldx  <- unlist(Bids[ordx], use.names = FALSE)
   nLc  <- c(0L, cumsum(sapply(Winners, function(w) length(unlist(Bids[w])))))
 
-  # Expected total demand per period across all origins.
-  # Each contracted carrier handles (total demand / nCarriers) on average.
-  # target_util < 1 means capacity < expected load on average (constraints bind).
+  # Distinct contracted base rates spaced across [rate_lo, rate_hi]; a small
+  # jitter keeps lanes within a carrier from being exactly equal. Because each
+  # lane sees only k carriers with well-separated base rates, the per-lane
+  # routing choice is non-degenerate.
+  base <- if (nCarriers == 1L) (rate_lo + rate_hi) / 2 else
+            seq(rate_lo, rate_hi, length.out = nCarriers)
+  transport_coef <- unlist(lapply(seq_len(nCarriers),
+                     function(c) base[c] + runif(length(Bids[[c]]), -0.1, 0.1)),
+                     use.names = FALSE)
+
+  # Capacity calibration (unchanged): mean per-carrier load / utilisation draw.
   mean_load  <- lambda * nOrigins / nCarriers
   util_draw  <- runif(nCarriers, util_lo, util_hi)
-  # Scale so that mean(util_draw) matches target_util (centre the distribution)
   util_draw  <- util_draw * (target_util / mean(util_draw))
   cap_per_cb <- pmax(1L, as.integer(round(mean_load / util_draw)))
-  # Replicate across tau periods (capacity can vary by period; use same draw)
   cb_caps    <- as.integer(rep(cap_per_cb, each = tau))
 
-  # Spot carriers: priced 30-50% above contracted rates (real market premium),
-  # capacity set to cover ~20% of expected total demand as overflow relief.
+  # Spot carriers: priced above contracted, finite overflow capacity.
   spot_cap_per <- pmax(1L, as.integer(round(lambda * nOrigins / nSpotCarriers * 0.2)))
+  spot_coef    <- runif(nLanes * nSpotCarriers * tau, rate_hi, rate_hi + 4.0)
 
-  # Transport costs calibrated to Chicago drayage: contracted ~$680/TEU median.
-  # In model units, Uniform(6, 8) represents contracted rate.
-  # Spot is 30-50% higher: Uniform(8, 12).
-  transport_coef <- runif(length(Ldx), 6.0, 8.0)
-  spot_coef      <- runif(nLanes * nSpotCarriers * tau, 8.0, 12.0)
+  # Storage caps sized to be non-binding but well-conditioned (not 1e6).
+  hold_all <- as.integer(ceiling(store_periods * lambda))
+  if (is.null(entry_capacity)) entry_capacity <- rep(hold_all, nOrigins)
+  if (is.null(exit_capacity))  exit_capacity  <- rep(hold_all, nDestinations)
 
   list(
     tau             = tau,

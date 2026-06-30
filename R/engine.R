@@ -48,7 +48,7 @@ setup_engine <- function(install = FALSE, ...) {
 #' @return An opaque Julia proxy (HyperParams).
 #' @export
 mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
-                         n_scenarios = 10L) {
+                         n_scenarios = 20L) {
   .ensure_engine()
 
   # Normalise field names from old JSON instances (lowercase winners/bids)
