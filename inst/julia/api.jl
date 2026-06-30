@@ -107,7 +107,9 @@ end
 # Returns the trained PolicyGraph — held as a Julia-side proxy in R.
 function train_model(config::HyperParams, iterations::Int64;
                      batch_size::Int64 = 1,
-                     max_retries::Int64 = 3)
+                     max_retries::Int64 = 3,
+                     cut_deletion_minimum::Int64 = 10,
+                     duality_handler = SDDP.ContinuousConicDuality())
     model       = _make_model(config)
     ckpt        = tempname() * ".cuts.json"
     completed   = 0
@@ -121,7 +123,8 @@ function train_model(config::HyperParams, iterations::Int64;
                 iteration_limit      = to_do,
                 cut_type             = SDDP.SINGLE_CUT,
                 parallel_scheme      = SDDP.Serial(),
-                cut_deletion_minimum = 10,
+                cut_deletion_minimum = cut_deletion_minimum,
+                duality_handler      = duality_handler,
                 add_to_existing_cuts = completed > 0,
             )
             completed += to_do
