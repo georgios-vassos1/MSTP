@@ -62,5 +62,10 @@ figures/
 *.swp
 *.swo
 
+# ── Paper-rerun heavy/regenerable artifacts (keep scripts + RESULTS.md only) ──
+# verbose SDDP training logs, and instance JSONs (regenerable from gen_instances.R)
+rerun/*.out
+rerun/inst/
+
 # ── Legacy / venue-specific (pre-existing) ───────────────────────────────────
 *_xx.R
