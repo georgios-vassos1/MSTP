@@ -1,19 +1,10 @@
 import Pkg
 
-# Install all required Julia packages for the MSTP engine.
-# Run once after installing Julia: julia setup.jl
-pkgs = [
-    "BlockDiagonals",
-    "DataStructures",
-    "Distributions",
-    "HiGHS",
-    "JuMP",
-    "LinearAlgebra",
-    "Random",
-    "SDDP",
-    "Statistics",
-]
-
-Pkg.add(pkgs)
+# Instantiate the pinned MSTP Julia environment (Project.toml + Manifest.toml in
+# this directory). Reproducibility relies on this lock, not on whatever versions
+# happen to be in the user's global environment. Run once after installing
+# Julia: `julia inst/julia/setup.jl`.
+Pkg.activate(@__DIR__)
+Pkg.instantiate()   # resolves against Manifest.toml; downloads only if missing
 Pkg.precompile()
-println("MSTP Julia engine setup complete.")
+println("MSTP Julia engine setup complete (pinned env: ", @__DIR__, ").")

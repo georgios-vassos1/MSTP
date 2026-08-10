@@ -12,6 +12,7 @@ subproblem_*.mof.json
 
 # ── Working notes / scratch (not part of the package) ────────────────────────
 CHANGES-*.md
+DESIGN-r-first.md
 scratch/
 tmp/
 *.tmp
@@ -39,6 +40,8 @@ tests/testthat/Rplots.pdf
 
 # ── Julia artifacts ──────────────────────────────────────────────────────────
 Manifest.toml
+# ...but the pinned engine lockfile IS tracked: it is the reproducibility pin.
+!inst/julia/Manifest.toml
 .julia/
 *.jl.cov
 *.jl.*.cov
