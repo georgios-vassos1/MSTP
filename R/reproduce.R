@@ -123,3 +123,51 @@ mstp_reproduce_recourse <- function(spec, seed = 1L) {
     stringsAsFactors  = FALSE
   )
 }
+
+#' Reproduce a capacity-optimisation regime (Tables 7-8)
+#'
+#' Generates a seed-deterministic instance at a given demand/utilisation regime
+#' and runs [mstp_capacity_optimize()]. The reservation price is fixed at
+#' `0.2 * mean(contract transport rate)`, matching the paper.
+#'
+#' @param spec Named list: `tau`, `nOrigins`, `nDestinations`, `nCarriers`,
+#'   `lambda`, and optionally `label`, `target_util` (default 0.8), `n_scenarios`
+#'   (20), `rho_cross` (0.0), `rho_oo` (0.6), `rho_dd` (0.7), and the optimisation
+#'   controls `outer` (12), `cold` (100), `eval_iters` (300), `n_eval` (500),
+#'   `n_capdual` (200).
+#' @param seed Integer base seed.
+#' @return A one-row `data.frame`: `label`, `lp_pct`, `sddp_pct`, `adv_pp`,
+#'   `x0_mean`, `xlp_mean`, `xsd_mean`.
+#' @export
+mstp_reproduce_capopt <- function(spec, seed = 1L) {
+  .ensure_engine()
+  stopifnot(!is.null(spec$tau), !is.null(spec$nOrigins), !is.null(spec$nDestinations),
+            !is.null(spec$nCarriers), !is.null(spec$lambda))
+
+  inst <- generate_instance(tau = as.integer(spec$tau),
+                            nOrigins = as.integer(spec$nOrigins),
+                            nDestinations = as.integer(spec$nDestinations),
+                            nCarriers = as.integer(spec$nCarriers),
+                            seed = as.integer(seed), lambda = as.numeric(spec$lambda),
+                            target_util = .or(spec$target_util, 0.8))
+  S   <- mstp_corrmat(spec$nOrigins, spec$nDestinations,
+                      rho_oo = .or(spec$rho_oo, 0.6), rho_dd = .or(spec$rho_dd, 0.7),
+                      rho_cross = .or(spec$rho_cross, 0.0))
+  cfg <- mstp_config(inst, lambda = as.numeric(spec$lambda), corrmat = S,
+                     n_scenarios = as.integer(.or(spec$n_scenarios, 20L)))
+  v <- 0.2 * mean(inst$transport_coef)
+
+  r <- mstp_capacity_optimize(cfg, v = v,
+                              outer = as.integer(.or(spec$outer, 12L)),
+                              cold = as.integer(.or(spec$cold, 100L)),
+                              eval_iters = as.integer(.or(spec$eval_iters, 300L)),
+                              n_eval = as.integer(.or(spec$n_eval, 500L)),
+                              n_capdual = as.integer(.or(spec$n_capdual, 200L)),
+                              seed = seed)
+  data.frame(
+    label = .or(spec$label, sprintf("%dx%dx%d", spec$nOrigins, spec$nDestinations, spec$nCarriers)),
+    lp_pct = r$lp_pct, sddp_pct = r$sddp_pct, adv_pp = r$adv_pp,
+    x0_mean = r$x0_mean, xlp_mean = r$xlp_mean, xsd_mean = r$xsd_mean,
+    stringsAsFactors = FALSE
+  )
+}

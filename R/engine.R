@@ -267,6 +267,54 @@ mstp_capacity_duals <- function(model, config, n_samples = 100L, seed = NULL) {
   as.numeric(result$duals)
 }
 
+#' Optimise carrier capacities: LP proxy vs SDDP dual gradient (CRN)
+#'
+#' Runs the capacity-optimisation comparison in the Julia core: projected
+#' gradient descent from the default capacities using (a) the duals of a
+#' mean-demand LP proxy and (b) the SDDP stage capacity duals, then scores all
+#' three capacity vectors (default, LP proxy, SDDP) on a shared out-of-sample
+#' scenario set (common random numbers). All scenarios are sampled in R, so the
+#' result is reproducible for a given `seed`.
+#'
+#' @param config `mstp_config` object.
+#' @param v Per-unit reservation price (e.g. `0.2 * mean(transport rate)`).
+#' @param outer Outer projected-gradient iterations (default 12).
+#' @param cold SDDP iterations per gradient step for the SDDP-dual source
+#'   (cold start; default 100).
+#' @param eval_iters SDDP iterations for the out-of-sample scoring policy
+#'   (default 300).
+#' @param n_eval Shared out-of-sample scenarios for scoring (default 500).
+#' @param n_capdual Trajectories used to average the SDDP capacity duals
+#'   (default 200).
+#' @param seed Optional integer base seed (derived sub-streams).
+#' @return A named list: total procurement costs (`x0_total`, `lp_total`,
+#'   `sddp_total`), percentage change vs default (`lp_pct`, `sddp_pct`), the SDDP
+#'   advantage in percentage points (`adv_pp`), and mean capacities per plan.
+#' @export
+mstp_capacity_optimize <- function(config, v, outer = 12L, cold = 100L,
+                                   eval_iters = 300L, n_eval = 500L,
+                                   n_capdual = 200L, seed = NULL) {
+  .ensure_engine()
+  stopifnot(inherits(config, "mstp_config"), is.numeric(v), length(v) == 1L)
+  outer <- as.integer(outer); cold <- as.integer(cold); eval_iters <- as.integer(eval_iters)
+  n_capdual <- as.integer(n_capdual); n_eval <- as.integer(n_eval)
+  n_fwd <- max(cold, eval_iters)
+  s <- function(off) if (is.null(seed)) NULL else as.integer(seed) + off
+
+  Om  <- mstp_scenario_support(config$tau, config$n_scenarios, config$lambda,
+                               config$corrmat, seed = s(0L))
+  fwd <- mstp_scenario_paths(n_fwd,     config$tau, config$lambda, config$corrmat, seed = s(1L))
+  cap <- mstp_scenario_paths(n_capdual, config$tau, config$lambda, config$corrmat, seed = s(2L))
+  ev  <- mstp_scenario_paths(n_eval,    config$tau, config$lambda, config$corrmat, seed = s(3L))
+
+  res <- JuliaCall::julia_call(
+    "capopt_regime_flat", config$jl,
+    .flatten_support(Om), .flatten_paths(fwd), .flatten_paths(cap), .flatten_paths(ev),
+    config$tau, config$n_scenarios, config$dim, n_fwd, n_capdual, n_eval,
+    v = as.numeric(v), outer = outer, cold = cold, eval_iters = eval_iters)
+  lapply(res, as.numeric)
+}
+
 #' Return a copy of an instance with updated carrier capacities
 #'
 #' Replaces `instance$carrier_capacity` with the supplied vector (rounded to
