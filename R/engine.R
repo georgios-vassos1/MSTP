@@ -43,7 +43,7 @@ setup_engine <- function(install = FALSE, ...) {
 #'                  single numeric (broadcast to all flow dimensions) or a
 #'                  numeric vector of length `nOrigins + nDestinations`.
 #' @param corrmat   Correlation matrix of size `(nOrigins+nDestinations)^2`.
-#'                  Use `mstp_gen_corrmat()` to generate one.
+#'                  Use `mstp_corrmat()` to generate one.
 #' @param n_scenarios Number of training scenarios (support size per stage).
 #' @return An object of class `mstp_config`: a list with the opaque Julia proxy
 #'   `jl` (the `HyperParams`) plus the R-side sampling parameters (`tau`, `dim`,
@@ -97,25 +97,11 @@ mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
   )
 }
 
-#' Generate a correlation matrix for the uncertainty model
-#'
-#' Wraps Julia's `gen_cov_mat`. Produces a block-diagonal covariance matrix
-#' with intra-block correlations drawn uniformly in [0.6, 0.8] and
-#' cross-block correlation set to `cross_corr`.
-#'
-#' @param n_blocks   Number of blocks (typically 2: one for origins, one for
-#'                   destinations).
-#' @param block_size Number of nodes per block (nOrigins or nDestinations).
-#' @param cross_corr Off-diagonal cross-block correlation (default 0.4).
-#' @return A numeric matrix of size `(n_blocks*block_size)^2`.
-#' @export
-mstp_gen_corrmat <- function(n_blocks, block_size, cross_corr = 0.4) {
-  .ensure_engine()
-  JuliaCall::julia_call("gen_cov_mat",
-                         as.integer(n_blocks),
-                         as.integer(block_size),
-                         as.numeric(cross_corr))
-}
+# The correlation matrix is built in R by mstp_corrmat() (R/scenarios.R), the
+# single source of truth for the copula dependence structure. The former
+# mstp_gen_corrmat() wrapper around Julia's RNG-based gen_cov_mat was removed:
+# R owns all randomness, and mstp_corrmat() takes explicit, documented
+# within-block correlations instead of drawing them.
 
 # ─── Train ────────────────────────────────────────────────────────────────────
 
@@ -205,46 +191,8 @@ mstp_validate_bound <- function(model, config, trials = 200L, z = 3.0, seed = NU
   res
 }
 
-# ─── Simulate ─────────────────────────────────────────────────────────────────
+# ─── Cuts / warm start ──────────────────────────────────────────────────────
 
-#' Simulate the trained policy out-of-bag
-#'
-#' Generates fresh OOB scenarios and runs the trained SDDP policy through
-#' them. Returns an R list with objective values, noise realisations, inventory
-#' trajectories, and carrier allocations — all as plain numeric matrices ready
-#' for analysis.
-#'
-#' @param model   Julia proxy returned by `mstp_train()`.
-#' @param config  Julia proxy returned by `mstp_config()`.
-#' @param trials  Number of OOB simulation replications (default 1000).
-#' @return A named list:
-#'   \describe{
-#'     \item{obj}{Numeric vector of length `trials` — total cost per run.}
-#'     \item{noise}{Matrix `(trials*tau) × (nOrigins+nDestinations)` —
-#'                  realised inflows/outflows.}
-#'     \item{entry}{Matrix `(trials*tau) × nOrigins` — entry inventory.}
-#'     \item{exitp}{Matrix `(trials*tau) × nDestinations` — exit stock.}
-#'     \item{exitm}{Matrix `(trials*tau) × nDestinations` — exit shortage.}
-#'     \item{moves}{Matrix `(trials*tau) × (nLanes+nSpotLanes)` — allocations.}
-#'     \item{tau, trials, nOrigins, nDestinations, nLanes, nSpotLanes}{Dims.}
-#'   }
-#' @export
-#' Extract expected carrier capacity duals from a trained SDDP model
-#'
-#' Runs `n_samples` forward simulations and collects the dual variable of each
-#' carrier capacity constraint at every stage. The returned vector has the same
-#' flat layout as `instance$carrier_capacity` — index `(k-1)*tau + t` for
-#' carrier `k` at stage `t` — so it can be used directly as the gradient
-#' `∂V/∂carrier_capacity` in a capacity optimisation loop.
-#'
-#' Because duals of a minimisation ≤ constraint are non-positive, the gradient
-#' of `V(x) + v·x` with respect to `x` is `cap_duals + v`.
-#'
-#' @param model     Julia proxy returned by `mstp_train()`.
-#' @param config    Julia proxy returned by `mstp_config()`.
-#' @param n_samples Number of simulation trajectories used to average the duals.
-#' @return Numeric vector of length `(nCarriers + nSpotCarriers) * tau`.
-#' @export
 #' Write SDDP Benders cuts to a file
 #'
 #' Persists the cuts from a trained model so they can be reloaded into a new
@@ -291,6 +239,25 @@ mstp_train_warm <- function(config, iterations, cuts_path, seed = NULL) {
   )
 }
 
+#' Extract expected carrier capacity duals from a trained SDDP model
+#'
+#' Simulates `n_samples` out-of-sample trajectories (drawn in R) and averages
+#' the dual variable of each carrier capacity constraint at every stage. The
+#' returned vector has the same flat layout as `instance$carrier_capacity` —
+#' index `(k-1)*tau + t` for carrier `k` at stage `t` — so it can be used
+#' directly as the gradient `∂V/∂carrier_capacity` in a capacity optimisation
+#' loop.
+#'
+#' Because duals of a minimisation `<=` constraint are non-positive, the
+#' gradient of `V(x) + v·x` with respect to `x` is `cap_duals + v`.
+#'
+#' @param model     Julia proxy returned by `mstp_train()`.
+#' @param config    `mstp_config` object returned by `mstp_config()`.
+#' @param n_samples Number of simulation trajectories used to average the duals.
+#' @param seed      Optional integer for reproducible trajectories (derived
+#'   sub-stream `seed + 4`).
+#' @return Numeric vector of length `(nCarriers + nSpotCarriers) * tau`.
+#' @export
 mstp_capacity_duals <- function(model, config, n_samples = 100L, seed = NULL) {
   .ensure_engine()
   stopifnot(inherits(config, "mstp_config"))
@@ -320,6 +287,32 @@ mstp_update_capacity <- function(instance, carrier_capacity) {
   instance
 }
 
+# ─── Simulate ─────────────────────────────────────────────────────────────────
+
+#' Simulate the trained policy out-of-bag
+#'
+#' Draws `trials` out-of-sample scenario paths in R (reproducible when `seed` is
+#' supplied) and runs the trained SDDP policy through them. Returns an R list
+#' with objective values, noise realisations, inventory trajectories, and
+#' carrier allocations — all as plain numeric matrices ready for analysis.
+#'
+#' @param model   Julia proxy returned by `mstp_train()`.
+#' @param config  `mstp_config` object returned by `mstp_config()`.
+#' @param trials  Number of OOB simulation replications (default 1000).
+#' @param seed    Optional integer for reproducible OOB scenarios (derived
+#'   sub-stream `seed + 2`).
+#' @return A named list:
+#'   \describe{
+#'     \item{obj}{Numeric vector of length `trials` — total cost per run.}
+#'     \item{noise}{Matrix `(trials*tau) × (nOrigins+nDestinations)` —
+#'                  realised inflows/outflows.}
+#'     \item{entry}{Matrix `(trials*tau) × nOrigins` — entry inventory.}
+#'     \item{exitp}{Matrix `(trials*tau) × nDestinations` — exit stock.}
+#'     \item{exitm}{Matrix `(trials*tau) × nDestinations` — exit shortage.}
+#'     \item{moves}{Matrix `(trials*tau) × (nLanes+nSpotLanes)` — allocations.}
+#'     \item{tau, trials, nOrigins, nDestinations, nLanes, nSpotLanes}{Dims.}
+#'   }
+#' @export
 mstp_simulate <- function(model, config, trials = 1000L, seed = NULL) {
   .ensure_engine()
   stopifnot(inherits(config, "mstp_config"))

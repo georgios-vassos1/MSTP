@@ -108,7 +108,7 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 | Instance | `generate_instance()` | Random MSTP instance; capacities calibrated to `lambda` at `target_util` utilisation |
 | Instance | `load_instances()` | Load batch from JSON files |
 | Config | `mstp_config()` | Build Julia `HyperParams` from an instance |
-| Config | `mstp_gen_corrmat()` | Generate block-diagonal correlation matrix |
+| Config | `mstp_corrmat()` | Generate block-diagonal correlation matrix (explicit within-block correlations) |
 | Train | `mstp_train()` | Train SDDP policy (returns opaque Julia proxy) |
 | Train | `mstp_train_warm()` | Rebuild model with new config, load saved cuts, continue training |
 | Train | `mstp_write_cuts()` | Persist Benders cuts to JSON for warm-starting |
