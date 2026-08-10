@@ -156,19 +156,19 @@ mstp_bound <- function(model) {
 #' Check whether the SDDP lower bound is numerically valid
 #'
 #' A valid SDDP lower bound for a minimisation satisfies
-#' \code{bound <= E[policy cost]}. This runs an in-sample Monte-Carlo
-#' simulation to estimate \code{E[policy cost]} and flags the bound as invalid
-#' when it exceeds the simulated mean by more than \code{z} standard errors.
-#' Use it to detect the ghost-cut overshoot (LB > UB) that arises from
-#' ill-conditioned LP duals on long horizons / large instances, so an invalid
-#' bound is never reported silently.
+#' \code{bound <= E[policy cost]}. This retrieves the lower bound, runs an
+#' out-of-sample simulation to estimate \code{E[policy cost]}, and applies the
+#' R decision rule [mstp_bound_validity()] (valid iff the bound does not exceed
+#' the simulated mean by more than \code{z} standard errors). Use it to detect
+#' the ghost-cut overshoot (LB > UB) that arises from ill-conditioned LP duals
+#' on long horizons / large instances, so an invalid bound is never reported
+#' silently.
 #'
 #' @param model   Julia proxy returned by \code{mstp_train()}.
 #' @param config  \code{mstp_config} object returned by \code{mstp_config()}.
 #' @param trials  Number of out-of-sample simulations (default 200).
 #' @param z       Standard-error margin allowed before flagging (default 3).
-#' @param seed    Optional integer for reproducible evaluation scenarios
-#'   (derived sub-stream \code{seed + 3}).
+#' @param seed    Optional integer for reproducible evaluation scenarios.
 #' @return A named list: \code{bound}, \code{sim_mean}, \code{sim_se},
 #'   \code{margin_se} (SEs the bound sits above the mean; positive = overshoot),
 #'   \code{trials}, and \code{valid} (logical).
@@ -176,19 +176,16 @@ mstp_bound <- function(model) {
 mstp_validate_bound <- function(model, config, trials = 200L, z = 3.0, seed = NULL) {
   .ensure_engine()
   stopifnot(inherits(config, "mstp_config"))
-  oob <- mstp_scenario_paths(as.integer(trials), config$tau, config$lambda,
-                             config$corrmat,
-                             seed = if (is.null(seed)) NULL else seed + 3L)
-  res <- JuliaCall::julia_call("validate_flat", model,
-                               .flatten_paths(oob), as.integer(trials),
-                               config$tau, config$dim, z = as.numeric(z))
-  res$valid     <- as.logical(res$valid)
-  res$bound     <- as.numeric(res$bound)
-  res$sim_mean  <- as.numeric(res$sim_mean)
-  res$sim_se    <- as.numeric(res$sim_se)
-  res$margin_se <- as.numeric(res$margin_se)
-  res$trials    <- as.integer(res$trials)
-  res
+  bound <- mstp_bound(model)
+  sim   <- mstp_simulate(model, config, trials = as.integer(trials), seed = seed)
+  r     <- mstp_bound_validity(bound, sim$obj, z = as.numeric(z))
+  if (!isTRUE(r$valid)) {
+    warning(sprintf(
+      "SDDP lower bound exceeds simulated mean by %.2f SE (bound=%.1f, sim_mean=%.1f +/- %.1f SE): numerically invalid (ghost-cut overshoot).",
+      r$margin_se, bound, r$mean, r$se), call. = FALSE)
+  }
+  list(bound = bound, sim_mean = r$mean, sim_se = r$se,
+       margin_se = r$margin_se, trials = r$n, valid = r$valid)
 }
 
 # ─── Cuts / warm start ──────────────────────────────────────────────────────

@@ -18,7 +18,7 @@ JuliaCall::julia_command(sprintf(
   file.path(root, "inst", "julia")))
 JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
 
-for (f in c("R/zzz.R", "R/scenarios.R", "R/geninst.R", "R/engine.R")) source(f)
+for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
 .mstp$loaded <- TRUE   # engine already sourced above; skip setup_engine()
 
 ok <- TRUE

@@ -85,8 +85,8 @@ end
 # and the lower bound still overshoots the simulated upper bound by a
 # statistically significant margin on long horizons / large instances
 # (τ=52: LB−UB ≈ 7 standard errors).  The ghost-slope overshoot is therefore
-# NOT fully mitigated by this setting.  `validate_bound` (below) detects the
-# residual overshoot so an invalid bound is never reported silently.
+# NOT fully mitigated by this setting.  The R-side mstp_bound_validity rule
+# detects the residual overshoot so an invalid bound is never reported silently.
 function _make_optimizer()
     optimizer_with_attributes(
         HiGHS.Optimizer,
@@ -187,55 +187,10 @@ function get_bound(model::SDDP.PolicyGraph)
     SDDP.calculate_bound(model)
 end
 
-# ─── Bound validity check ─────────────────────────────────────────────────────
-#
-# A valid SDDP lower bound for a minimisation satisfies  bound ≤ E[policy cost].
-# We estimate E[policy cost] by an in-sample Monte-Carlo simulation (the same
-# noise distribution as training, via the default InSampleMonteCarlo scheme) and
-# flag the bound as INVALID when it exceeds the simulated mean by more than `z`
-# standard errors — i.e. by more than Monte-Carlo noise can explain.
-#
-# This is a detector, not a repair: it surfaces the ghost-cut overshoot
-# (LB > UB) documented above for long horizons / large instances, where
-# degenerate, ill-conditioned LP duals produce numerically invalid Benders cuts.
-# `margin_se` is how many standard errors the bound sits ABOVE the mean
-# (positive ⇒ overshoot); `valid` is false once that exceeds `z`.
-
-# Pure decision rule (no solver, no SDDP): given the lower bound and a sample of
-# realised policy costs, decide whether bound ≤ E[cost] within Monte-Carlo noise.
-# Factored out so the invariant can be unit-tested deterministically.
-function bound_validity(bound::Real, costs::AbstractVector{<:Real}; z::Real = 3.0)
-    n  = length(costs)
-    n == 0 && throw(ArgumentError("costs must be non-empty"))
-    m  = sum(costs) / n
-    sd = n > 1 ? sqrt(sum((c - m)^2 for c in costs) / (n - 1)) : 0.0
-    se = sd / sqrt(n)
-    margin_se = se > 0 ? (bound - m) / se : (bound > m ? Inf : (bound < m ? -Inf : 0.0))
-    (mean = m, se = se, margin_se = margin_se, n = n, valid = bound <= m + z * se)
-end
-
-function validate_bound(model::SDDP.PolicyGraph,
-                        oob::Vector{<:Vector{<:Tuple}}; z::Float64 = 3.0)
-    bound = SDDP.calculate_bound(model)
-    sims  = SDDP.simulate(model, length(oob);
-                          sampling_scheme = SDDP.Historical(oob),
-                          parallel_scheme = SDDP.Serial())
-    costs = Float64[sum(node[:stage_objective] for node in sim) for sim in sims]
-    r = bound_validity(bound, costs; z = z)
-    if !r.valid
-        @warn "SDDP lower bound exceeds in-sample simulated mean by $(round(r.margin_se, digits=2)) SE " *
-              "(bound=$(round(bound, digits=1)), sim_mean=$(round(r.mean, digits=1)) ± $(round(r.se, digits=1)) SE): " *
-              "bound is numerically invalid (ghost-cut overshoot)."
-    end
-    Dict(
-        "bound"     => bound,
-        "sim_mean"  => r.mean,
-        "sim_se"    => r.se,
-        "margin_se" => r.margin_se,
-        "trials"    => r.n,
-        "valid"     => r.valid,
-    )
-end
+# Bound validity is decided in R (see mstp_bound_validity in R/bound_validity.R):
+# the lower bound (get_bound) and the out-of-sample costs (simulate_model) are
+# returned to R, which applies the SE-tolerant rule. Keeping the rule in one
+# place — R — avoids duplicating it across the language boundary.
 
 # ─── Simulate ─────────────────────────────────────────────────────────────────
 
@@ -368,11 +323,6 @@ function simulate_flat(model::SDDP.PolicyGraph, config::HyperParams,
                        oob_flat, n_oob, tau, dim)
     oob = build_historical(Vector{Float64}(oob_flat), Int64(n_oob), Int64(tau), Int64(dim))
     simulate_model(model, config, oob)
-end
-
-function validate_flat(model::SDDP.PolicyGraph, oob_flat, n_oob, tau, dim; z::Float64 = 3.0)
-    oob = build_historical(Vector{Float64}(oob_flat), Int64(n_oob), Int64(tau), Int64(dim))
-    validate_bound(model, oob; z = z)
 end
 
 function cap_duals_flat(model::SDDP.PolicyGraph, config::HyperParams,
