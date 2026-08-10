@@ -44,8 +44,6 @@ build_env <- function(sim) {
   env$nJ     <- sim$nDestinations
   env$I_     <- 1L:env$nI
   env$J_     <- 1L:env$nJ
-  env$L      <- TLPR::CartesianProductX(env$I_, env$J_)
-  env$R      <- max(sim$exit_capacity)
   env$nL     <- env$nI * env$nJ
   nSC        <- if (!is.null(sim$nSpotCarriers)) sim$nSpotCarriers else sim$nCarriers
   env$nCS    <- sim$nCarriers
