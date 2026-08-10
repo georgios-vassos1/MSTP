@@ -61,19 +61,29 @@ size: coarse support (`n_scenarios=5`) on a tiny instance can overshoot and is
 correctly flagged invalid; the paper's `n_scenarios=10`+ on larger instances is
 cleaner.
 
-## Regret (Table 2) and gain of recourse / VSS — NOT yet in the harness
+## Regret (Table 2) and gain of recourse / VSS
 
-`compute_regret` and `compute_vss` (`R/recourse.R`) are the sole R implementations
-(the Julia copies live only in the frozen oracle). They are **not** wired into the
-reproduction harness yet, because two things must first be resolved:
+`mstp_reproduce_recourse()` (`R/reproduce.R`) generates a seed-deterministic
+instance, trains and simulates the SDDP policy, and reports regret against the
+perfect-foresight LP and gain of recourse against the myopic policy. Both
+analyses (`compute_regret`, `compute_vss`, `R/recourse.R`) are **pure R** — the
+former TLPR-based clairvoyant/myopic LPs were reimplemented in `R/lp_transport.R`,
+so the package no longer depends on TLPR.
 
-1. **TLPR load.** They build clairvoyant/myopic LPs via `TLPR::` (`R/utils.R:47,243`).
-   TLPR currently only loads with `KMP_DUPLICATE_LIB_OK=TRUE` (libomp double-init,
-   `OMP: Error #15`).
-2. **Tau convention.** `build_env` sets `env$tau <- sim$tau - 1L` (`R/utils.R:42`)
-   and `compute_vss` rolls `seq_len(env$tau)` stages, while the refactored
-   `simulate_model` returns `config.tau` rows per trial. This off-by-one convention
-   must be reconciled against the new simulate output before regret/VSS numbers can
-   be certified. Until then they are deliberately not run or locked.
+Correctness is gated, not assumed (`tests/integration/`):
 
-These are the first tasks for finishing the reproduction (tracked for M6/beyond).
+- `reconstruct_cost.R` — the R cost model reproduces the SDDP stage objective to
+  ~1e-12 (validated on a non-square 2×3 instance so the spot-cost index `nL`
+  is distinguished from `nOD`).
+- `recourse_check.R` — on every out-of-sample trajectory the clairvoyant optimum
+  is ≤ the SDDP realised cost (regret ≥ 0) and ≤ the myopic cost; `compute_regret`
+  matches the direct computation; the gain-of-recourse baseline is locked.
+
+Paper-scale example (seed 42; slow):
+
+```r
+mstp_reproduce_recourse(
+  list(label = "2x2", tau = 4L, nOrigins = 2L, nDestinations = 2L,
+       nCarriers = 4L, lambda = 5.5, iters = 1000L, trials = 500L,
+       rho_cross = 0.4), seed = 42L)
+```

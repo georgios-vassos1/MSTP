@@ -15,16 +15,19 @@ JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
 for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
 .mstp$loaded <- TRUE
 
-inst <- generate_instance(tau = 4L, nOrigins = 2L, nDestinations = 2L,
+# Non-square topology (nL = nI*nJ = 6 != nOD = nI+nJ = 5) so the spot-cost index
+# distinguishes nL from nOD (they coincide on square 2x2 instances).
+inst <- generate_instance(tau = 4L, nOrigins = 2L, nDestinations = 3L,
                           nCarriers = 3L, seed = 42L, lambda = 30.0)
-S    <- mstp_corrmat(2, 2, rho_cross = 0.0)
+S    <- mstp_corrmat(2, 3, rho_cross = 0.0)
 cfg  <- mstp_config(inst, lambda = 30.0, corrmat = S, n_scenarios = 10L)
 m    <- mstp_train(cfg, iterations = 30L, seed = 5L)
 sim  <- mstp_simulate(m, cfg, trials = 25L, seed = 5L)
 
 tau <- sim$tau; nI <- sim$nOrigins; nJ <- sim$nDestinations
-nLanes <- sim$nLanes; nSpot <- sim$nSpotLanes; nSC <- inst$nSpotCarriers
-nOD <- nI + nJ
+nLanes <- sim$nLanes; nSpot <- sim$nSpotLanes
+nL <- nI * nJ                    # spot lanes per spot carrier (model.jl / types.jl)
+nSCo <- nSpot %/% nL             # number of spot carriers
 trials <- sim$trials
 
 recon <- numeric(trials)
@@ -36,9 +39,10 @@ for (i in seq_len(trials)) {
             sum(inst$exit_store_coef  * sim$exitp[r, ]) +
             sum(inst$exit_short_coef  * sim$exitm[r, ])
     contract <- sum(inst$transport_coef * sim$moves[r, seq_len(nLanes)])
-    kdx  <- as.vector(vapply(seq_len(nSC),
-              function(c) (c - 1L) * nOD * tau + (0:(nOD - 1L)) * tau + t,
-              numeric(nOD)))
+    # spot-cost index (model.jl:55): carrier-major, lane-inner, lane count = nL
+    kdx  <- as.vector(vapply(seq_len(nSCo),
+              function(c) (c - 1L) * nL * tau + (0:(nL - 1L)) * tau + t,
+              numeric(nL)))
     spot <- sum(inst$spot_coef[kdx] * sim$moves[r, nLanes + seq_len(nSpot)])
     total <- total + hold + contract + spot
   }

@@ -77,3 +77,49 @@ mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0) {
 
   do.call(rbind, rows)
 }
+
+#' Reproduce the recourse results (regret and gain of recourse)
+#'
+#' Generates a seed-deterministic instance, trains an SDDP policy, simulates it
+#' out-of-sample, and reports regret against the perfect-foresight LP
+#' (Table 2 in the paper) and gain of recourse against the myopic policy. All
+#' analysis is pure R (no TLPR).
+#'
+#' @param spec A named list as in [mstp_reproduce_bounds()] (`tau`, `nOrigins`,
+#'   `nDestinations`, `nCarriers`, `lambda`, `iters`, optionally `label`,
+#'   `trials`, `n_scenarios`, `rho_oo`, `rho_dd`, `rho_cross`).
+#' @param seed Integer base seed (reproduces the whole row).
+#' @return A one-row `data.frame` with `label`, `mean_regret_pct`,
+#'   `median_regret_pct`, `q95_regret_pct`, and `mean_gain_pct`.
+#' @export
+mstp_reproduce_recourse <- function(spec, seed = 1L) {
+  .ensure_engine()
+  stopifnot(!is.null(spec$tau), !is.null(spec$nOrigins), !is.null(spec$nDestinations),
+            !is.null(spec$nCarriers), !is.null(spec$lambda), !is.null(spec$iters))
+
+  inst <- generate_instance(tau = as.integer(spec$tau),
+                            nOrigins = as.integer(spec$nOrigins),
+                            nDestinations = as.integer(spec$nDestinations),
+                            nCarriers = as.integer(spec$nCarriers),
+                            seed = as.integer(seed), lambda = as.numeric(spec$lambda))
+  S <- mstp_corrmat(spec$nOrigins, spec$nDestinations,
+                    rho_oo = .or(spec$rho_oo, 0.6), rho_dd = .or(spec$rho_dd, 0.7),
+                    rho_cross = .or(spec$rho_cross, 0.0))
+  cfg   <- mstp_config(inst, lambda = as.numeric(spec$lambda), corrmat = S,
+                       n_scenarios = as.integer(.or(spec$n_scenarios, 10L)))
+  model <- mstp_train(cfg, iterations = as.integer(spec$iters), seed = as.integer(seed))
+  sim   <- mstp_simulate(model, cfg, trials = as.integer(.or(spec$trials, 200L)),
+                         seed = as.integer(seed))
+
+  reg <- as.numeric(compute_regret(list(inst), list(sim)))
+  gn  <- as.numeric(compute_vss(list(inst), list(sim)))
+
+  data.frame(
+    label             = .or(spec$label, sprintf("%dx%dx%d", spec$nOrigins, spec$nDestinations, spec$nCarriers)),
+    mean_regret_pct   = 100 * mean(reg),
+    median_regret_pct = 100 * stats::median(reg),
+    q95_regret_pct    = 100 * as.numeric(stats::quantile(reg, 0.95)),
+    mean_gain_pct     = 100 * mean(gn),
+    stringsAsFactors  = FALSE
+  )
+}

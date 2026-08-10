@@ -28,13 +28,7 @@ install.packages(c("JuliaCall", "jsonlite", "Matrix", "highs",
                    "data.table", "ggplot2", "parallel"))
 ```
 
-3. **TLPR** — local LP construction library (must be installed separately):
-
-```r
-devtools::install_local("~/drayage/TLPR")
-```
-
-4. **Install this package**
+3. **Install this package**
 
 ```r
 devtools::install_local("~/drayage/MSTP")
@@ -142,21 +136,26 @@ generate_instance()  ──►  mstp_config()  ──►  mstp_train()  ──�
 
 ```
 R (MSTP package)
-├── engine.R        Julia session management and R↔Julia API wrappers
-├── geninst.R       Instance generation
-├── instances.R     Batch JSON loading, R-side correlation matrix
-├── sensitivity.R   Inflow and spot-rate sensitivity analysis (parallel LP)
-├── recourse.R      Regret (clairvoyant LP) and VSS (myopic policy)
-├── logs.R          SDDP log parsing and summarisation
-└── utils.R         HiGHS LP adapter, TLPR model builders
+├── engine.R         Julia session management and R↔Julia API wrappers
+├── scenarios.R      Deterministic Gaussian-copula scenario sampling (seeded)
+├── geninst.R        Instance generation
+├── instances.R      Batch JSON loading
+├── lp_transport.R   Pure-R clairvoyant + myopic transportation LPs
+├── recourse.R       Regret (clairvoyant LP) and gain of recourse (myopic)
+├── sensitivity.R    Inflow and spot-rate clairvoyant-cost sensitivity
+├── bound_validity.R SDDP lower-bound validity rule
+├── reproduce.R      Reproduction harness for the SDDP bound tables
+├── logs.R           SDDP log parsing and summarisation
+└── utils.R          HiGHS LP adapter, TLPR-format export helper
 
-Julia (inst/julia/)
-├── mstp.jl         Entry point (sources all modules)
+Julia (inst/julia/, pinned env: Project.toml + Manifest.toml)
+├── mstp.jl         Entry point (activates pinned env, sources modules)
 ├── types.jl        HyperParams struct (plain types, R-compatible)
-├── model.jl        SDDP stage subproblem (JuMP)
-├── utils.jl        Correlated Poisson sampling
-├── api.jl          build_config / train_model (batched, crash-resilient) / train_model_warm / write_cuts / simulate_model / simulate_cap_duals / batch_run
-└── setup.jl        Julia package installation
+├── model.jl        SDDP stage subproblem (JuMP), R-supplied support
+├── utils.jl        Correlated Poisson sampling (oracle-only; R owns RNG)
+├── api.jl          build_config, train/simulate/cap-duals over R-supplied
+│                   Historical scenarios, and the flat-array R bridge
+└── setup.jl        Instantiate the pinned Julia environment
 ```
 
 Julia objects (`HyperParams`, `SDDP.PolicyGraph`) are held as opaque proxies in R and passed back when needed — no serialisation overhead.
@@ -170,7 +169,6 @@ Julia objects (`HyperParams`, `SDDP.PolicyGraph`) are held as opaque proxies in 
 | JuliaCall | R↔Julia bridge |
 | SDDP.jl | Stochastic dual dynamic programming |
 | HiGHS / HiGHS.jl | LP/MIP solver (open-source) |
-| TLPR | Local LP construction utilities |
 | Matrix | Sparse matrix support |
 | parallel | Multi-core LP batch solving |
 | jsonlite | JSON instance I/O |
