@@ -3,7 +3,13 @@ using JuMP, SDDP
 # One-stage subproblem for the multistage stochastic transportation model.
 # Defines state variables (inventory), decision variables (carrier allocations),
 # constraints (capacity, flow balance, transitions), and the stage objective.
-function transportation_t(sp::Model, stage::Int64; config::HyperParams)
+# `stage_support` is the finite noise support for this stage, supplied as data by
+# the caller (sampled in R — the engine performs no RNG). It is a vector of
+# equally-weighted outcomes, each a length-(nOrigins+nDestinations) vector
+# ordered [inflow_1..nOrigins, outflow_1..nDestinations].
+function transportation_t(sp::Model, stage::Int64;
+                          config::HyperParams,
+                          stage_support::Vector{Vector{Float64}})
 
     ## State variables (inventory at entry and exit hubs)
     @variables(sp, begin
@@ -44,9 +50,9 @@ function transportation_t(sp::Model, stage::Int64; config::HyperParams)
                                      + sum(move[config.to_SG[j]]) + sum(move[config.to_SP[j]])
                                      - outflow[j])
 
-    ## Uncertainty: correlated Poisson inflows and outflows
-    Ξ = sample_scenarios(config.n_scenarios, config.lambda, config.corrmat)
-    SDDP.parameterize(sp, Ξ) do ξ
+    ## Uncertainty: correlated Poisson inflows and outflows, from the
+    ## caller-supplied per-stage support (no engine-side RNG).
+    SDDP.parameterize(sp, stage_support) do ξ
         JuMP.fix.(inflow,  ξ[1:config.nOrigins])
         JuMP.fix.(outflow, ξ[config.nOrigins .+ (1:config.nDestinations)])
     end

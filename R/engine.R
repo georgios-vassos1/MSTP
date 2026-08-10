@@ -44,8 +44,11 @@ setup_engine <- function(install = FALSE, ...) {
 #'                  numeric vector of length `nOrigins + nDestinations`.
 #' @param corrmat   Correlation matrix of size `(nOrigins+nDestinations)^2`.
 #'                  Use `mstp_gen_corrmat()` to generate one.
-#' @param n_scenarios Number of training scenarios sampled per SDDP iteration.
-#' @return An opaque Julia proxy (HyperParams).
+#' @param n_scenarios Number of training scenarios (support size per stage).
+#' @return An object of class `mstp_config`: a list with the opaque Julia proxy
+#'   `jl` (the `HyperParams`) plus the R-side sampling parameters (`tau`, `dim`,
+#'   `lambda`, `corrmat`, `n_scenarios`) that [mstp_train()] and [mstp_simulate()]
+#'   use to draw scenarios in R.
 #' @export
 mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
                          n_scenarios = 20L) {
@@ -59,10 +62,13 @@ mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
   if (is.null(instance$nSpotCarriers))
     instance$nSpotCarriers <- instance$nCarriers
 
-  if (is.null(corrmat)) {
-    nOD     <- instance$nOrigins + instance$nDestinations
-    corrmat <- diag(nOD)
-  }
+  dim <- as.integer(instance$nOrigins + instance$nDestinations)
+  if (is.null(corrmat)) corrmat <- diag(dim)
+  lambda <- if (length(lambda) == 1L) rep(as.numeric(lambda), dim) else as.numeric(lambda)
+  stopifnot(
+    length(lambda) == dim,
+    is.matrix(corrmat), nrow(corrmat) == dim, ncol(corrmat) == dim
+  )
 
   params <- c(
     instance[c("tau", "nOrigins", "nDestinations", "nCarriers", "nSpotCarriers",
@@ -72,13 +78,23 @@ mstp_config <- function(instance, lambda = 2000.0, corrmat = NULL,
                "entry_store_coef", "exit_store_coef", "exit_short_coef",
                "transport_coef", "spot_coef", "carrier_capacity")],
     list(
-      lambda      = as.numeric(lambda),
+      lambda      = lambda,
       corrmat     = corrmat,
       n_scenarios = as.integer(n_scenarios)
     )
   )
 
-  JuliaCall::julia_call("build_config", params)
+  structure(
+    list(
+      jl          = JuliaCall::julia_call("build_config", params),
+      tau         = as.integer(instance$tau),
+      dim         = dim,
+      lambda      = lambda,
+      corrmat     = corrmat,
+      n_scenarios = as.integer(n_scenarios)
+    ),
+    class = "mstp_config"
+  )
 }
 
 #' Generate a correlation matrix for the uncertainty model
@@ -109,13 +125,31 @@ mstp_gen_corrmat <- function(n_blocks, block_size, cross_corr = 0.4) {
 #' SDDP. Returns an opaque Julia proxy for the trained `PolicyGraph`, which
 #' can be passed to `mstp_simulate()`.
 #'
-#' @param config      Julia proxy returned by `mstp_config()`.
-#' @param iterations  Number of SDDP training iterations (default 1500).
+#' @param config      `mstp_config` object returned by `mstp_config()`.
+#' @param iterations  Number of SDDP training iterations (default 1500). One
+#'   forward trajectory is drawn per iteration.
+#' @param seed        Optional integer. When supplied, the per-stage support and
+#'   the forward trajectories are drawn reproducibly (from derived sub-streams
+#'   `seed` and `seed + 1`), so the trained policy — and its lower bound — are
+#'   deterministic.
 #' @return An opaque Julia proxy (SDDP.PolicyGraph).
 #' @export
-mstp_train <- function(config, iterations = 1500L) {
+mstp_train <- function(config, iterations = 1500L, seed = NULL) {
   .ensure_engine()
-  JuliaCall::julia_call("train_model", config, as.integer(iterations))
+  stopifnot(inherits(config, "mstp_config"))
+  iterations <- as.integer(iterations)
+
+  Om  <- mstp_scenario_support(config$tau, config$n_scenarios, config$lambda,
+                               config$corrmat, seed = seed)
+  fwd <- mstp_scenario_paths(iterations, config$tau, config$lambda,
+                             config$corrmat,
+                             seed = if (is.null(seed)) NULL else seed + 1L)
+
+  JuliaCall::julia_call(
+    "train_flat", config$jl,
+    .flatten_support(Om), config$tau, config$n_scenarios, config$dim,
+    .flatten_paths(fwd), iterations, iterations
+  )
 }
 
 # ─── Bound ────────────────────────────────────────────────────────────────────
@@ -144,17 +178,24 @@ mstp_bound <- function(model) {
 #' bound is never reported silently.
 #'
 #' @param model   Julia proxy returned by \code{mstp_train()}.
-#' @param config  Julia proxy returned by \code{mstp_config()}.
-#' @param trials  Number of in-sample simulations (default 200).
+#' @param config  \code{mstp_config} object returned by \code{mstp_config()}.
+#' @param trials  Number of out-of-sample simulations (default 200).
 #' @param z       Standard-error margin allowed before flagging (default 3).
+#' @param seed    Optional integer for reproducible evaluation scenarios
+#'   (derived sub-stream \code{seed + 3}).
 #' @return A named list: \code{bound}, \code{sim_mean}, \code{sim_se},
 #'   \code{margin_se} (SEs the bound sits above the mean; positive = overshoot),
 #'   \code{trials}, and \code{valid} (logical).
 #' @export
-mstp_validate_bound <- function(model, config, trials = 200L, z = 3.0) {
+mstp_validate_bound <- function(model, config, trials = 200L, z = 3.0, seed = NULL) {
   .ensure_engine()
-  res <- JuliaCall::julia_call("validate_bound", model, config,
-                               trials = as.integer(trials), z = as.numeric(z))
+  stopifnot(inherits(config, "mstp_config"))
+  oob <- mstp_scenario_paths(as.integer(trials), config$tau, config$lambda,
+                             config$corrmat,
+                             seed = if (is.null(seed)) NULL else seed + 3L)
+  res <- JuliaCall::julia_call("validate_flat", model,
+                               .flatten_paths(oob), as.integer(trials),
+                               config$tau, config$dim, z = as.numeric(z))
   res$valid     <- as.logical(res$valid)
   res$bound     <- as.numeric(res$bound)
   res$sim_mean  <- as.numeric(res$sim_mean)
@@ -234,16 +275,31 @@ mstp_write_cuts <- function(model, path) {
 #' @param cuts_path   Path to a cuts file written by `mstp_write_cuts()`.
 #' @return An opaque Julia proxy (SDDP.PolicyGraph).
 #' @export
-mstp_train_warm <- function(config, iterations, cuts_path) {
+mstp_train_warm <- function(config, iterations, cuts_path, seed = NULL) {
   .ensure_engine()
-  JuliaCall::julia_call("train_model_warm", config, as.integer(iterations),
-                         as.character(cuts_path))
+  stopifnot(inherits(config, "mstp_config"))
+  iterations <- as.integer(iterations)
+  Om  <- mstp_scenario_support(config$tau, config$n_scenarios, config$lambda,
+                               config$corrmat, seed = seed)
+  fwd <- mstp_scenario_paths(iterations, config$tau, config$lambda,
+                             config$corrmat,
+                             seed = if (is.null(seed)) NULL else seed + 1L)
+  JuliaCall::julia_call(
+    "train_warm_flat", config$jl,
+    .flatten_support(Om), config$tau, config$n_scenarios, config$dim,
+    .flatten_paths(fwd), iterations, iterations, as.character(cuts_path)
+  )
 }
 
-mstp_capacity_duals <- function(model, config, n_samples = 100L) {
+mstp_capacity_duals <- function(model, config, n_samples = 100L, seed = NULL) {
   .ensure_engine()
-  result <- JuliaCall::julia_call("simulate_cap_duals", model, config,
-                                   as.integer(n_samples))
+  stopifnot(inherits(config, "mstp_config"))
+  oob <- mstp_scenario_paths(as.integer(n_samples), config$tau, config$lambda,
+                             config$corrmat,
+                             seed = if (is.null(seed)) NULL else seed + 4L)
+  result <- JuliaCall::julia_call("cap_duals_flat", model, config$jl,
+                                   .flatten_paths(oob), as.integer(n_samples),
+                                   config$tau, config$dim)
   as.numeric(result$duals)
 }
 
@@ -264,10 +320,15 @@ mstp_update_capacity <- function(instance, carrier_capacity) {
   instance
 }
 
-mstp_simulate <- function(model, config, trials = 1000L) {
+mstp_simulate <- function(model, config, trials = 1000L, seed = NULL) {
   .ensure_engine()
-  result <- JuliaCall::julia_call("simulate_model", model, config,
-                                   as.integer(trials))
+  stopifnot(inherits(config, "mstp_config"))
+  oob <- mstp_scenario_paths(as.integer(trials), config$tau, config$lambda,
+                             config$corrmat,
+                             seed = if (is.null(seed)) NULL else seed + 2L)
+  result <- JuliaCall::julia_call("simulate_flat", model, config$jl,
+                                   .flatten_paths(oob), as.integer(trials),
+                                   config$tau, config$dim)
 
   # Convert scalar dims to plain R integers for convenience
   result$tau           <- as.integer(result$tau)

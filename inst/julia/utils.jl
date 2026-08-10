@@ -24,9 +24,3 @@ const _PCLAMP = 1e-10
 function sample_scenarios(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
     [vec(quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), 1)), _PCLAMP, 1.0 - _PCLAMP))) for _ in 1:N]
 end
-
-# Sample N correlated Poisson scenarios — returns Matrix (N × dim)
-# Used for bulk/OOB sampling
-function sample_scenarios_mat(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
-    quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), N)), _PCLAMP, 1.0 - _PCLAMP))'
-end

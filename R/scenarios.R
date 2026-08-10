@@ -166,6 +166,21 @@ mstp_scenario_support <- function(tau, n_scenarios, lambda, corrmat, seed = NULL
   })
 }
 
+# Flatten a per-stage support (list of n_scenarios x d matrices) into a double
+# vector in stage-major, scenario, dim order to match build_support() in
+# inst/julia/api.jl: idx(t,s,d) = ((t-1)*n_scen + (s-1))*dim + d.
+# `t(m)` makes the row-major (scenario-major, dim-minor) traversal explicit.
+.flatten_support <- function(Om) {
+  as.double(unlist(lapply(Om, function(m) as.vector(t(m))), use.names = FALSE))
+}
+
+# Flatten trajectories (list of tau x d matrices) into a double vector in
+# path-major, stage, dim order to match build_historical() in inst/julia/api.jl:
+# idx(p,t,d) = ((p-1)*tau + (t-1))*dim + d.
+.flatten_paths <- function(P) {
+  as.double(unlist(lapply(P, function(m) as.vector(t(m))), use.names = FALSE))
+}
+
 #' Sample full-horizon scenario paths for Historical sampling
 #'
 #' Draws `n_paths` independent length-`tau` trajectories from the copula, for use
