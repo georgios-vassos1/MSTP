@@ -87,20 +87,40 @@ end
 # (τ=52: LB−UB ≈ 7 standard errors).  The ghost-slope overshoot is therefore
 # NOT fully mitigated by this setting.  The R-side mstp_bound_validity rule
 # detects the residual overshoot so an invalid bound is never reported silently.
-function _make_optimizer()
-    optimizer_with_attributes(
-        HiGHS.Optimizer,
-        "output_flag"                  => false,
-        "simplex_scale_strategy"       => 4,
-        "simplex_strategy"             => 4,
-        "primal_feasibility_tolerance" => 1e-7,
-        "dual_feasibility_tolerance"   => 1e-9,
-    )
+# Selectable HiGHS configurations. The default `:primal` is the historical
+# setting; the others are numerically more robust fallbacks used when a stage
+# subproblem returns a spurious INFEASIBLE (ghost-cut / ill-scaling) — see the
+# deterministic recovery in train_model. `set_opt_mode!` lets R pick the default.
+# Default: dual simplex + presolve. The historical :primal (and plain :presolve)
+# return spurious INFEASIBLE on 6x6x20+ instances (ill-scaled cut coefficients);
+# dual+presolve trains them reliably and fast, and :ipm is the robust fallback.
+const _OPT_MODE = Ref{Symbol}(:dual_presolve)
+set_opt_mode!(m) = (_OPT_MODE[] = Symbol(m); nothing)
+
+function _make_optimizer(mode::Symbol = _OPT_MODE[])
+    opts = if mode === :primal
+        ["simplex_scale_strategy" => 4, "simplex_strategy" => 4,
+         "primal_feasibility_tolerance" => 1e-7, "dual_feasibility_tolerance" => 1e-9]
+    elseif mode === :presolve
+        ["presolve" => "on", "simplex_scale_strategy" => 2, "simplex_strategy" => 4]
+    elseif mode === :dual_presolve
+        ["presolve" => "on", "simplex_strategy" => 1]
+    elseif mode === :ipm
+        ["solver" => "ipm", "run_crossover" => "on", "presolve" => "on"]
+    elseif mode === :pdlp
+        # First-order primal-dual (matrix-free); robust on large ill-conditioned
+        # LPs where simplex/IPM emit a spurious infeasibility certificate.
+        ["solver" => "pdlp", "presolve" => "on"]
+    else
+        error("unknown optimizer mode $mode")
+    end
+    optimizer_with_attributes(HiGHS.Optimizer, "output_flag" => false, opts...)
 end
 
-# Build a fresh PolicyGraph over the caller-supplied per-stage support.
-# `support[t]` is the finite noise support for stage t (see build_support).
-function _make_model(config::HyperParams, support::Vector{Vector{Vector{Float64}}})
+# Build a fresh PolicyGraph over the caller-supplied per-stage support, using the
+# given HiGHS configuration `mode` (default: the module setting).
+function _make_model(config::HyperParams, support::Vector{Vector{Vector{Float64}}};
+                     mode::Symbol = _OPT_MODE[])
     length(support) == config.tau ||
         throw(ArgumentError("support has $(length(support)) stages, expected tau=$(config.tau)"))
     SDDP.PolicyGraph(
@@ -109,7 +129,7 @@ function _make_model(config::HyperParams, support::Vector{Vector{Vector{Float64}
         SDDP.LinearGraph(config.tau);
         sense       = :Min,
         lower_bound = 0.0,
-        optimizer   = _make_optimizer(),
+        optimizer   = _make_optimizer(mode),
     )
 end
 
@@ -118,14 +138,14 @@ end
 # The engine performs no RNG: the forward pass replays the caller-supplied
 # `forward` trajectories via the sequential Historical scheme, and the backward
 # pass (default CompleteSampler) enumerates the caller-supplied per-stage
-# support. Given the same support and trajectories the trained cuts — and hence
-# the lower bound — are reproducible.
+# support. Given the same support, trajectories, and solver mode the trained cuts
+# — and hence the lower bound — are reproducible.
 #
-# The earlier RNG-driven crash-retry loop is gone: with a fixed support a retry
-# reproduces the same subproblems, so it could not escape a crash. The numerical
-# crashes it worked around were caused by random initial inventory and many
-# near-identical carriers per lane, both eliminated by the corrected generator
-# (see CHANGES-sddp-bound-validity.md). A residual crash is surfaced, not hidden.
+# Resilience is deterministic (no RNG): a stage subproblem that returns a
+# spurious INFEASIBLE under ill-scaled cut coefficients is retried on the SAME
+# data under the next, more robust HiGHS configuration in `modes`
+# (dual+presolve, then interior point). This replaces the old RNG-reshuffling
+# retry loop, which a fixed support could not use.
 #
 # Returns the trained PolicyGraph — held as a Julia-side proxy in R.
 function train_model(config::HyperParams,
@@ -133,23 +153,31 @@ function train_model(config::HyperParams,
                      forward::Vector{<:Vector{<:Tuple}},
                      iterations::Int64;
                      cut_deletion_minimum::Int64 = 10,
-                     duality_handler = SDDP.ContinuousConicDuality())
-    model = _make_model(config, support)
-    try
-        SDDP.train(model;
-            iteration_limit      = iterations,
-            sampling_scheme      = SDDP.Historical(forward),
-            cut_type             = SDDP.SINGLE_CUT,
-            parallel_scheme      = SDDP.Serial(),
-            cut_deletion_minimum = cut_deletion_minimum,
-            duality_handler      = duality_handler,
-        )
-    catch e
-        error("SDDP training failed: $(sprint(showerror, e)). With a fixed " *
-              "support this is deterministic; check instance conditioning " *
-              "(see CHANGES-sddp-bound-validity.md).")
+                     duality_handler = SDDP.ContinuousConicDuality(),
+                     modes::Vector{Symbol} = [_OPT_MODE[], :ipm])
+    modes = unique(modes)
+    for (i, mode) in enumerate(modes)
+        model = _make_model(config, support; mode = mode)
+        try
+            SDDP.train(model;
+                iteration_limit      = iterations,
+                sampling_scheme      = SDDP.Historical(forward),
+                cut_type             = SDDP.SINGLE_CUT,
+                parallel_scheme      = SDDP.Serial(),
+                cut_deletion_minimum = cut_deletion_minimum,
+                duality_handler      = duality_handler,
+            )
+            return model
+        catch e
+            if i < length(modes)
+                @warn "SDDP train failed under :$mode; retrying on same data under :$(modes[i+1]). ($(sprint(showerror, e)))"
+            else
+                ms = join(modes, ", ")
+                se = sprint(showerror, e)
+                error("SDDP training failed under all solver modes ($ms): $se. See CHANGES-sddp-bound-validity.md.")
+            end
+        end
     end
-    model
 end
 
 # ─── Warm-start helpers ───────────────────────────────────────────────────────

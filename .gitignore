@@ -37,6 +37,10 @@ src/*.dll
 # testthat scratch (the tests/ sources themselves stay tracked)
 tests/testthat/_snaps/
 tests/testthat/Rplots.pdf
+# Integration/reproduction run outputs (regenerable; the *.R scripts stay tracked)
+tests/integration/*.out
+tests/integration/*.log
+tests/integration/paper_results.txt
 
 # ── Julia artifacts ──────────────────────────────────────────────────────────
 Manifest.toml

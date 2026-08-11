@@ -11,11 +11,21 @@ function transportation_t(sp::Model, stage::Int64;
                           config::HyperParams,
                           stage_support::Vector{Vector{Float64}})
 
+    ## Finite storage bound for the inventory states. Without it the state
+    ## variables are unbounded above, giving the stage LP a huge, ill-conditioned
+    ## feasible region that makes HiGHS return a spurious INFEASIBLE certificate
+    ## on large instances. `ub` is a generous upper bound on the maximum stock any
+    ## trajectory can accumulate — initial stock plus tau periods of inflow well
+    ## into the clamped-Poisson tail (mean + 8*sd > the 1e-10 quantile) — so it
+    ## bounds the LP without ever binding on a feasible path (recourse preserved).
+    ub = maximum(vcat(config.entry_stock_0, config.exit_stock_0, config.exit_short_0)) +
+         config.tau * maximum(config.lambda .+ 8.0 .* sqrt.(config.lambda))
+
     ## State variables (inventory at entry and exit hubs)
     @variables(sp, begin
-        0 <= entry[i = 1:config.nOrigins],      (SDDP.State, initial_value = config.entry_stock_0[i])
-        0 <= exitp[j = 1:config.nDestinations], (SDDP.State, initial_value = config.exit_stock_0[j])
-        0 <= exitm[j = 1:config.nDestinations], (SDDP.State, initial_value = config.exit_short_0[j])
+        0 <= entry[i = 1:config.nOrigins]      <= ub, (SDDP.State, initial_value = config.entry_stock_0[i])
+        0 <= exitp[j = 1:config.nDestinations] <= ub, (SDDP.State, initial_value = config.exit_stock_0[j])
+        0 <= exitm[j = 1:config.nDestinations] <= ub, (SDDP.State, initial_value = config.exit_short_0[j])
     end)
 
     ## Decision variables

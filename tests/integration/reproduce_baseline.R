@@ -40,7 +40,7 @@ check(all(t1$valid),              "all bounds certified valid (within 3 SE)")
 check(nrow(t1) == 2L,             "one row per spec")
 
 # Regression lock: exact baseline values (filled in from the first verified run).
-LOCK <- list("2x2x3" = 2263.856121, "2x2x3-t6" = 3930.709785)
+LOCK <- list("2x2x3" = 2263.808966, "2x2x3-t6" = 3930.404253)
 for (lbl in names(LOCK)) {
   got <- t1$LB[t1$label == lbl]
   check(isTRUE(all.equal(got, LOCK[[lbl]], tolerance = 1e-5)),

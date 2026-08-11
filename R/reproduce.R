@@ -46,7 +46,8 @@ mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0) {
                               nDestinations = as.integer(s$nDestinations),
                               nCarriers = as.integer(s$nCarriers),
                               seed = as.integer(seed),
-                              lambda = as.numeric(s$lambda))
+                              lambda = as.numeric(s$lambda),
+                              target_util = .or(s$target_util, 0.8))
     if (!is.null(s$spot_mult))
       inst$spot_coef <- inst$spot_coef * as.numeric(s$spot_mult)
 
