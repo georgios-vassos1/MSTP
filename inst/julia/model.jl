@@ -3,13 +3,29 @@ using JuMP, SDDP
 # One-stage subproblem for the multistage stochastic transportation model.
 # Defines state variables (inventory), decision variables (carrier allocations),
 # constraints (capacity, flow balance, transitions), and the stage objective.
-function transportation_t(sp::Model, stage::Int64; config::HyperParams)
+# `stage_support` is the finite noise support for this stage, supplied as data by
+# the caller (sampled in R — the engine performs no RNG). It is a vector of
+# equally-weighted outcomes, each a length-(nOrigins+nDestinations) vector
+# ordered [inflow_1..nOrigins, outflow_1..nDestinations].
+function transportation_t(sp::Model, stage::Int64;
+                          config::HyperParams,
+                          stage_support::Vector{Vector{Float64}})
+
+    ## Finite storage bound for the inventory states. Without it the state
+    ## variables are unbounded above, giving the stage LP a huge, ill-conditioned
+    ## feasible region that makes HiGHS return a spurious INFEASIBLE certificate
+    ## on large instances. `ub` is a generous upper bound on the maximum stock any
+    ## trajectory can accumulate — initial stock plus tau periods of inflow well
+    ## into the clamped-Poisson tail (mean + 8*sd > the 1e-10 quantile) — so it
+    ## bounds the LP without ever binding on a feasible path (recourse preserved).
+    ub = maximum(vcat(config.entry_stock_0, config.exit_stock_0, config.exit_short_0)) +
+         config.tau * maximum(config.lambda .+ 8.0 .* sqrt.(config.lambda))
 
     ## State variables (inventory at entry and exit hubs)
     @variables(sp, begin
-        0 <= entry[i = 1:config.nOrigins],      (SDDP.State, initial_value = config.entry_stock_0[i])
-        0 <= exitp[j = 1:config.nDestinations], (SDDP.State, initial_value = config.exit_stock_0[j])
-        0 <= exitm[j = 1:config.nDestinations], (SDDP.State, initial_value = config.exit_short_0[j])
+        0 <= entry[i = 1:config.nOrigins]      <= ub, (SDDP.State, initial_value = config.entry_stock_0[i])
+        0 <= exitp[j = 1:config.nDestinations] <= ub, (SDDP.State, initial_value = config.exit_stock_0[j])
+        0 <= exitm[j = 1:config.nDestinations] <= ub, (SDDP.State, initial_value = config.exit_short_0[j])
     end)
 
     ## Decision variables
@@ -44,9 +60,9 @@ function transportation_t(sp::Model, stage::Int64; config::HyperParams)
                                      + sum(move[config.to_SG[j]]) + sum(move[config.to_SP[j]])
                                      - outflow[j])
 
-    ## Uncertainty: correlated Poisson inflows and outflows
-    Ξ = sample_scenarios(config.n_scenarios, config.lambda, config.corrmat)
-    SDDP.parameterize(sp, Ξ) do ξ
+    ## Uncertainty: correlated Poisson inflows and outflows, from the
+    ## caller-supplied per-stage support (no engine-side RNG).
+    SDDP.parameterize(sp, stage_support) do ξ
         JuMP.fix.(inflow,  ξ[1:config.nOrigins])
         JuMP.fix.(outflow, ξ[config.nOrigins .+ (1:config.nDestinations)])
     end

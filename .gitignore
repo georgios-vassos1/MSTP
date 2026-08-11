@@ -12,6 +12,7 @@ subproblem_*.mof.json
 
 # ── Working notes / scratch (not part of the package) ────────────────────────
 CHANGES-*.md
+DESIGN-r-first.md
 scratch/
 tmp/
 *.tmp
@@ -36,9 +37,15 @@ src/*.dll
 # testthat scratch (the tests/ sources themselves stay tracked)
 tests/testthat/_snaps/
 tests/testthat/Rplots.pdf
+# Integration/reproduction run outputs (regenerable; the *.R scripts stay tracked)
+tests/integration/*.out
+tests/integration/*.log
+tests/integration/paper_results.txt
 
 # ── Julia artifacts ──────────────────────────────────────────────────────────
 Manifest.toml
+# ...but the pinned engine lockfile IS tracked: it is the reproducibility pin.
+!inst/julia/Manifest.toml
 .julia/
 *.jl.cov
 *.jl.*.cov
@@ -69,3 +76,6 @@ rerun/inst/
 
 # ── Legacy / venue-specific (pre-existing) ───────────────────────────────────
 *_xx.R
+
+# R CMD build output
+*.tar.gz

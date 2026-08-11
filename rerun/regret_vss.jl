@@ -2,7 +2,7 @@
 # (gain-of-recourse vs myopic) on the FIXED generator, pure Julia.
 # Reimplements MSTP/R/recourse.R (compute_regret + .stage_lp/compute_vss).
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const INST = expanduser("~/drayage/MSTP/rerun/inst")
 const SMOKE = get(ENV,"MODE","full")=="smoke"
 const NIT = SMOKE ? 30 : 1000

@@ -1,5 +1,11 @@
 using Distributions, LinearAlgebra, BlockDiagonals, Random
 
+# NOTE: the samplers below (corrblock, gen_cov_mat, sample_scenarios) are the
+# only RNG in the shipped engine and are NOT used by the R-first path — R now
+# owns all scenario generation (R/scenarios.R) and passes draws in as data. They
+# are retained solely because the frozen reproduction oracle in rerun/*.jl loads
+# this engine via mstp.jl and calls them. Do not use them from new engine code.
+
 # Build a correlation block of size n with a single off-diagonal value
 function corrblock(n::Int64, lower::Float64=0.6, upper::Float64=0.8, by::Float64=0.1)
     value = rand(lower:by:upper)
@@ -20,13 +26,8 @@ end
 const _PCLAMP = 1e-10
 
 # Sample N correlated Poisson scenario vectors — returns Vector{Vector{Int64}}
-# Used for SDDP training: each element is one scenario (nOrigins + nDestinations values)
+# (oracle-only; see note at top). Each element is one scenario of length
+# nOrigins + nDestinations.
 function sample_scenarios(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
     [vec(quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), 1)), _PCLAMP, 1.0 - _PCLAMP))) for _ in 1:N]
-end
-
-# Sample N correlated Poisson scenarios — returns Matrix (N × dim)
-# Used for bulk/OOB sampling
-function sample_scenarios_mat(N::Int64, lambda::Vector{Float64}, corrmat::Matrix{Float64})
-    quantile.(Poisson.(lambda), clamp.(cdf.(Normal(), rand(MvNormal(corrmat), N)), _PCLAMP, 1.0 - _PCLAMP))'
 end

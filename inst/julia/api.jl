@@ -44,6 +44,31 @@ function build_config(p::AbstractDict)
     )
 end
 
+# ─── Noise reshaping (R supplies flat arrays) ──────────────────────────────────
+#
+# R owns all scenario sampling and passes the draws as flat Float64 vectors plus
+# their dimensions; these helpers rebuild the nested structures SDDP needs. Index
+# conventions (must match the R flatteners in R/engine.R):
+#   support:   stage-major, then scenario, then dim
+#     idx(t,s,d) = ((t-1)*n_scen + (s-1))*dim + d
+#   trajectory: path-major, then stage, then dim
+#     idx(p,t,d) = ((p-1)*tau + (t-1))*dim + d
+
+# Per-stage in-sample support: Vector over stages of Vector of outcome vectors.
+function build_support(flat::Vector{Float64}, tau::Int64, n_scen::Int64, dim::Int64)
+    @assert length(flat) == tau * n_scen * dim "support flat length mismatch"
+    [[[flat[((t - 1) * n_scen + (s - 1)) * dim + d] for d in 1:dim]
+      for s in 1:n_scen] for t in 1:tau]
+end
+
+# Full-horizon trajectories as an SDDP Historical scenario list: Vector over
+# paths of Vector of (stage, noise-vector) tuples.
+function build_historical(flat::Vector{Float64}, n_traj::Int64, tau::Int64, dim::Int64)
+    @assert length(flat) == n_traj * tau * dim "trajectory flat length mismatch"
+    [[(t, [flat[((p - 1) * tau + (t - 1)) * dim + d] for d in 1:dim])
+      for t in 1:tau] for p in 1:n_traj]
+end
+
 # ─── Train ────────────────────────────────────────────────────────────────────
 
 # Shared HiGHS optimizer settings.  Primal simplex (strategy=4) avoids the
@@ -60,98 +85,99 @@ end
 # and the lower bound still overshoots the simulated upper bound by a
 # statistically significant margin on long horizons / large instances
 # (τ=52: LB−UB ≈ 7 standard errors).  The ghost-slope overshoot is therefore
-# NOT fully mitigated by this setting.  `validate_bound` (below) detects the
-# residual overshoot so an invalid bound is never reported silently.
-function _make_optimizer()
-    optimizer_with_attributes(
-        HiGHS.Optimizer,
-        "output_flag"                  => false,
-        "simplex_scale_strategy"       => 4,
-        "simplex_strategy"             => 4,
-        "primal_feasibility_tolerance" => 1e-7,
-        "dual_feasibility_tolerance"   => 1e-9,
-    )
+# NOT fully mitigated by this setting.  The R-side mstp_bound_validity rule
+# detects the residual overshoot so an invalid bound is never reported silently.
+# Selectable HiGHS configurations. The default `:primal` is the historical
+# setting; the others are numerically more robust fallbacks used when a stage
+# subproblem returns a spurious INFEASIBLE (ghost-cut / ill-scaling) — see the
+# deterministic recovery in train_model. `set_opt_mode!` lets R pick the default.
+# Default: dual simplex + presolve. The historical :primal (and plain :presolve)
+# return spurious INFEASIBLE on 6x6x20+ instances (ill-scaled cut coefficients);
+# dual+presolve trains them reliably and fast, and :ipm is the robust fallback.
+const _OPT_MODE = Ref{Symbol}(:dual_presolve)
+set_opt_mode!(m) = (_OPT_MODE[] = Symbol(m); nothing)
+
+function _make_optimizer(mode::Symbol = _OPT_MODE[])
+    opts = if mode === :primal
+        ["simplex_scale_strategy" => 4, "simplex_strategy" => 4,
+         "primal_feasibility_tolerance" => 1e-7, "dual_feasibility_tolerance" => 1e-9]
+    elseif mode === :presolve
+        ["presolve" => "on", "simplex_scale_strategy" => 2, "simplex_strategy" => 4]
+    elseif mode === :dual_presolve
+        ["presolve" => "on", "simplex_strategy" => 1]
+    elseif mode === :ipm
+        ["solver" => "ipm", "run_crossover" => "on", "presolve" => "on"]
+    elseif mode === :pdlp
+        # First-order primal-dual (matrix-free); robust on large ill-conditioned
+        # LPs where simplex/IPM emit a spurious infeasibility certificate.
+        ["solver" => "pdlp", "presolve" => "on"]
+    else
+        error("unknown optimizer mode $mode")
+    end
+    optimizer_with_attributes(HiGHS.Optimizer, "output_flag" => false, opts...)
 end
 
-# Rebuild a fresh PolicyGraph with the given config and optimizer.
-function _make_model(config::HyperParams)
+# Build a fresh PolicyGraph over the caller-supplied per-stage support, using the
+# given HiGHS configuration `mode` (default: the module setting).
+function _make_model(config::HyperParams, support::Vector{Vector{Vector{Float64}}};
+                     mode::Symbol = _OPT_MODE[])
+    length(support) == config.tau ||
+        throw(ArgumentError("support has $(length(support)) stages, expected tau=$(config.tau)"))
     SDDP.PolicyGraph(
-        (sp, stage) -> transportation_t(sp, stage; config = config),
+        (sp, stage) -> transportation_t(sp, stage; config = config,
+                                        stage_support = support[stage]),
         SDDP.LinearGraph(config.tau);
         sense       = :Min,
         lower_bound = 0.0,
-        optimizer   = _make_optimizer(),
+        optimizer   = _make_optimizer(mode),
     )
 end
 
-# Train the SDDP policy graph using a crash-resilient batched loop.
+# Train the SDDP policy graph deterministically.
 #
-# Strategy
-# --------
-# Each batch of `batch_size` iterations is wrapped in a try-catch.  After
-# every successful batch the Benders cuts are checkpointed to a temp file.
-# If HiGHS returns OPTIMAL+INFEASIBLE_POINT and SDDP throws, we:
-#   1. Rebuild a fresh PolicyGraph (clears all JuMP state).
-#   2. Reload cuts from the last good checkpoint (preserving convergence).
-#   3. Retry the *same* batch up to MAX_RETRIES times — new RNG state usually
-#      yields a different (better-conditioned) scenario draw that avoids crash.
-#   4. If MAX_RETRIES exhausted, discard the checkpoint (cut coefficients may
-#      be numerically bad), rebuild completely fresh, and advance past the
-#      failed iteration to break the retry loop.
+# The engine performs no RNG: the forward pass replays the caller-supplied
+# `forward` trajectories via the sequential Historical scheme, and the backward
+# pass (default CompleteSampler) enumerates the caller-supplied per-stage
+# support. Given the same support, trajectories, and solver mode the trained cuts
+# — and hence the lower bound — are reproducible.
 #
-# cut_deletion_minimum = 10 aggressively prunes dominated cuts, keeping the
-# LP matrix small and reducing the chance of near-zero coefficient buildup.
-# This is important for capacity-optimisation runs where capacity changes
-# between gradient steps can make older cuts near-degenerate.
+# Resilience is deterministic (no RNG): a stage subproblem that returns a
+# spurious INFEASIBLE under ill-scaled cut coefficients is retried on the SAME
+# data under the next, more robust HiGHS configuration in `modes`
+# (dual+presolve, then interior point). This replaces the old RNG-reshuffling
+# retry loop, which a fixed support could not use.
 #
 # Returns the trained PolicyGraph — held as a Julia-side proxy in R.
-function train_model(config::HyperParams, iterations::Int64;
-                     batch_size::Int64 = 1,
-                     max_retries::Int64 = 3,
+function train_model(config::HyperParams,
+                     support::Vector{Vector{Vector{Float64}}},
+                     forward::Vector{<:Vector{<:Tuple}},
+                     iterations::Int64;
                      cut_deletion_minimum::Int64 = 10,
-                     duality_handler = SDDP.ContinuousConicDuality())
-    model       = _make_model(config)
-    ckpt        = tempname() * ".cuts.json"
-    completed   = 0
-    has_ckpt    = false
-    retries     = 0
-
-    while completed < iterations
-        to_do = min(batch_size, iterations - completed)
+                     duality_handler = SDDP.ContinuousConicDuality(),
+                     modes::Vector{Symbol} = [_OPT_MODE[], :ipm])
+    modes = unique(modes)
+    for (i, mode) in enumerate(modes)
+        model = _make_model(config, support; mode = mode)
         try
             SDDP.train(model;
-                iteration_limit      = to_do,
+                iteration_limit      = iterations,
+                sampling_scheme      = SDDP.Historical(forward),
                 cut_type             = SDDP.SINGLE_CUT,
                 parallel_scheme      = SDDP.Serial(),
                 cut_deletion_minimum = cut_deletion_minimum,
                 duality_handler      = duality_handler,
-                add_to_existing_cuts = completed > 0,
             )
-            completed += to_do
-            SDDP.write_cuts_to_file(model, ckpt)
-            has_ckpt = true
-            retries  = 0   # reset on success
+            return model
         catch e
-            retries += 1
-            if retries <= max_retries
-                @warn "SDDP numerical crash at completed=$completed (retry $retries/$max_retries): $(sprint(showerror, e)). Rebuilding from checkpoint."
-                model = _make_model(config)
-                if has_ckpt
-                    SDDP.read_cuts_from_file(model, ckpt)
-                end
-                # Do NOT advance `completed` — retry same batch with new RNG state.
+            if i < length(modes)
+                @warn "SDDP train failed under :$mode; retrying on same data under :$(modes[i+1]). ($(sprint(showerror, e)))"
             else
-                @warn "SDDP numerical crash at completed=$completed: max retries ($max_retries) exhausted. Discarding checkpoint and advancing."
-                model    = _make_model(config)   # completely fresh, no cuts
-                has_ckpt = false
-                completed += to_do               # skip this batch to break loop
-                retries  = 0
+                ms = join(modes, ", ")
+                se = sprint(showerror, e)
+                error("SDDP training failed under all solver modes ($ms): $se. See CHANGES-sddp-bound-validity.md.")
             end
         end
     end
-
-    has_ckpt && isfile(ckpt) && rm(ckpt; force = true)
-    model
 end
 
 # ─── Warm-start helpers ───────────────────────────────────────────────────────
@@ -165,11 +191,15 @@ end
 # Build a new model with updated config, seed it with cuts from a previous run,
 # then continue training.  Cuts are valid across capacity changes because they
 # are functions of the inventory state variables, not of carrier_capacity.
-function train_model_warm(config::HyperParams, iterations::Int64, cuts_path::String)
-    model = _make_model(config)
+function train_model_warm(config::HyperParams,
+                          support::Vector{Vector{Vector{Float64}}},
+                          forward::Vector{<:Vector{<:Tuple}},
+                          iterations::Int64, cuts_path::String)
+    model = _make_model(config, support)
     SDDP.read_cuts_from_file(model, cuts_path)
     SDDP.train(model;
         iteration_limit      = iterations,
+        sampling_scheme      = SDDP.Historical(forward),
         cut_type             = SDDP.SINGLE_CUT,
         parallel_scheme      = SDDP.Serial(),
         cut_deletion_minimum = 100,
@@ -185,65 +215,20 @@ function get_bound(model::SDDP.PolicyGraph)
     SDDP.calculate_bound(model)
 end
 
-# ─── Bound validity check ─────────────────────────────────────────────────────
-#
-# A valid SDDP lower bound for a minimisation satisfies  bound ≤ E[policy cost].
-# We estimate E[policy cost] by an in-sample Monte-Carlo simulation (the same
-# noise distribution as training, via the default InSampleMonteCarlo scheme) and
-# flag the bound as INVALID when it exceeds the simulated mean by more than `z`
-# standard errors — i.e. by more than Monte-Carlo noise can explain.
-#
-# This is a detector, not a repair: it surfaces the ghost-cut overshoot
-# (LB > UB) documented above for long horizons / large instances, where
-# degenerate, ill-conditioned LP duals produce numerically invalid Benders cuts.
-# `margin_se` is how many standard errors the bound sits ABOVE the mean
-# (positive ⇒ overshoot); `valid` is false once that exceeds `z`.
-
-# Pure decision rule (no solver, no SDDP): given the lower bound and a sample of
-# realised policy costs, decide whether bound ≤ E[cost] within Monte-Carlo noise.
-# Factored out so the invariant can be unit-tested deterministically.
-function bound_validity(bound::Real, costs::AbstractVector{<:Real}; z::Real = 3.0)
-    n  = length(costs)
-    n == 0 && throw(ArgumentError("costs must be non-empty"))
-    m  = sum(costs) / n
-    sd = n > 1 ? sqrt(sum((c - m)^2 for c in costs) / (n - 1)) : 0.0
-    se = sd / sqrt(n)
-    margin_se = se > 0 ? (bound - m) / se : (bound > m ? Inf : (bound < m ? -Inf : 0.0))
-    (mean = m, se = se, margin_se = margin_se, n = n, valid = bound <= m + z * se)
-end
-
-function validate_bound(model::SDDP.PolicyGraph, config::HyperParams;
-                        trials::Int64 = 200, z::Float64 = 3.0)
-    bound = SDDP.calculate_bound(model)
-    sims  = SDDP.simulate(model, trials; parallel_scheme = SDDP.Serial())
-    costs = Float64[sum(node[:stage_objective] for node in sim) for sim in sims]
-    r = bound_validity(bound, costs; z = z)
-    if !r.valid
-        @warn "SDDP lower bound exceeds in-sample simulated mean by $(round(r.margin_se, digits=2)) SE " *
-              "(bound=$(round(bound, digits=1)), sim_mean=$(round(r.mean, digits=1)) ± $(round(r.se, digits=1)) SE): " *
-              "bound is numerically invalid (ghost-cut overshoot)."
-    end
-    Dict(
-        "bound"     => bound,
-        "sim_mean"  => r.mean,
-        "sim_se"    => r.se,
-        "margin_se" => r.margin_se,
-        "trials"    => r.n,
-        "valid"     => r.valid,
-    )
-end
+# Bound validity is decided in R (see mstp_bound_validity in R/bound_validity.R):
+# the lower bound (get_bound) and the out-of-sample costs (simulate_model) are
+# returned to R, which applies the SE-tolerant rule. Keeping the rule in one
+# place — R — avoids duplicating it across the language boundary.
 
 # ─── Simulate ─────────────────────────────────────────────────────────────────
 
 # Run out-of-bag simulations using the trained model.
 # Generates fresh OOB scenarios from the uncertainty model and returns
 # a Dict with plain arrays that JuliaCall converts to R-native types.
-function simulate_model(model::SDDP.PolicyGraph, config::HyperParams, trials::Int64)
-    # Generate OOB scenarios: one trajectory per trial
-    oob = [
-        [(t, sample_scenarios(1, config.lambda, config.corrmat)...) for t in 1:config.tau]
-        for _ in 1:trials
-    ]
+function simulate_model(model::SDDP.PolicyGraph, config::HyperParams,
+                        oob::Vector{<:Vector{<:Tuple}})
+    # Out-of-sample trajectories are supplied by the caller (sampled in R).
+    trials = length(oob)
 
     sims = SDDP.simulate(
         model, trials,
@@ -303,22 +288,25 @@ end
 
 # ─── Capacity duals ───────────────────────────────────────────────────────────
 
-# Simulate n_samples trajectories and collect the dual of each carrier capacity
-# constraint at every stage.  Returns a flat Float64 vector of length
-# (nCarriers + nSpotCarriers) * tau with the same (k-1)*tau + stage indexing as
-# carrier_capacity, so it can be used directly as ∂V/∂carrier_capacity.
+# Replay the caller-supplied out-of-sample trajectories and collect the dual of
+# each carrier capacity constraint at every stage.  Returns a flat Float64 vector
+# of length (nCarriers + nSpotCarriers) * tau with the same (k-1)*tau + stage
+# indexing as carrier_capacity, so it can be used directly as ∂V/∂carrier_capacity.
 #
-# Uses the default InSampleMonteCarlo sampling scheme (same noise distribution as
-# training) and runs sequentially to avoid thread-safety issues with dual().
-function simulate_cap_duals(model::SDDP.PolicyGraph, config::HyperParams, n_samples::Int64)
-    nK    = config.nCarriers + config.nSpotCarriers
-    duals = zeros(Float64, nK * config.tau)
+# Runs sequentially to avoid thread-safety issues with dual().
+function simulate_cap_duals(model::SDDP.PolicyGraph, config::HyperParams,
+                            oob::Vector{<:Vector{<:Tuple}})
+    nK        = config.nCarriers + config.nSpotCarriers
+    n_samples = length(oob)
+    duals     = zeros(Float64, nK * config.tau)
 
     sims = SDDP.simulate(
         model, n_samples,
         custom_recorders = Dict{Symbol, Function}(
             :cap_duals => sp -> Float64[JuMP.dual(sp[:cap][k]) for k in 1:nK]
-        ),
+        );
+        sampling_scheme = SDDP.Historical(oob),
+        parallel_scheme = SDDP.Serial(),
     )
 
     for sim in sims
@@ -333,13 +321,40 @@ function simulate_cap_duals(model::SDDP.PolicyGraph, config::HyperParams, n_samp
     Dict("duals" => duals, "nK" => Int64(nK), "tau" => Int64(config.tau))
 end
 
-# ─── Batch train + simulate ───────────────────────────────────────────────────
+# ─── Flat-array bridge (R boundary) ─────────────────────────────────────────────
+#
+# R passes scenario draws as flat Float64 vectors plus their dimensions; these
+# shims reshape (build_support / build_historical) and delegate to the typed core
+# functions above. They exist only to keep the R↔Julia marshaling in one place.
 
-# Convenience: train and simulate a list of configs in one call.
-# Returns a Vector of result Dicts (one per instance).
-function batch_run(configs::Vector{HyperParams}, iterations::Int64, trials::Int64)
-    map(configs) do config
-        model = train_model(config, iterations)
-        simulate_model(model, config, trials)
-    end
+function train_flat(config::HyperParams,
+                    support_flat, tau, n_scen, dim,
+                    forward_flat, n_fwd, iterations;
+                    cut_deletion_minimum::Int64 = 10)
+    tau = Int64(tau); n_scen = Int64(n_scen); dim = Int64(dim); n_fwd = Int64(n_fwd)
+    support = build_support(Vector{Float64}(support_flat), tau, n_scen, dim)
+    forward = build_historical(Vector{Float64}(forward_flat), n_fwd, tau, dim)
+    train_model(config, support, forward, Int64(iterations);
+                cut_deletion_minimum = cut_deletion_minimum)
+end
+
+function train_warm_flat(config::HyperParams,
+                         support_flat, tau, n_scen, dim,
+                         forward_flat, n_fwd, iterations, cuts_path::String)
+    tau = Int64(tau); n_scen = Int64(n_scen); dim = Int64(dim); n_fwd = Int64(n_fwd)
+    support = build_support(Vector{Float64}(support_flat), tau, n_scen, dim)
+    forward = build_historical(Vector{Float64}(forward_flat), n_fwd, tau, dim)
+    train_model_warm(config, support, forward, Int64(iterations), cuts_path)
+end
+
+function simulate_flat(model::SDDP.PolicyGraph, config::HyperParams,
+                       oob_flat, n_oob, tau, dim)
+    oob = build_historical(Vector{Float64}(oob_flat), Int64(n_oob), Int64(tau), Int64(dim))
+    simulate_model(model, config, oob)
+end
+
+function cap_duals_flat(model::SDDP.PolicyGraph, config::HyperParams,
+                        oob_flat, n_oob, tau, dim)
+    oob = build_historical(Vector{Float64}(oob_flat), Int64(n_oob), Int64(tau), Int64(dim))
+    simulate_cap_duals(model, config, oob)
 end

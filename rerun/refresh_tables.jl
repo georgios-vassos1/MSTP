@@ -9,7 +9,7 @@
 # >>> lines and a final JSON-ish summary.
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
 
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const SMOKE = get(ENV, "MODE", "full") == "smoke"
 const INST  = expanduser("~/drayage/MSTP/rerun/inst")
 toi(x)= x isa Number ? Int64[Int64(x)] : Vector{Int64}(Int64.(collect(x)))

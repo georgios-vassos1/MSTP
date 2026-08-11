@@ -1,5 +1,14 @@
 # Bound-overshoot acceptance gate (reviewer concern #3)
 
+> **SUPERSEDED (R-first refactor).** These scripts target the *pre-refactor*
+> engine: `check_bound_acceptance.jl` calls the Julia `validate_bound`, which was
+> removed once the bound-validity rule moved to R (`mstp_bound_validity`,
+> `R/bound_validity.R`) and evaluation became R-side. The live equivalent of
+> this gate is `tests/testthat/test-bound-validity-slow.R` (same seed-42 τ=52
+> instance, `MSTP_SLOW_TESTS=1`). The scripts below are kept as frozen
+> provenance of the original bug reproduction; they no longer run against the
+> current engine.
+
 This is the slow, real-compute regression gate for the SDDP lower-bound
 overshoot (LB > UB). It reproduces the bug on the **exact seed-42** 6×6×20 /
 τ=52 / λ=700 instance with the 1e6 storage caps used in the production τ=52 run.

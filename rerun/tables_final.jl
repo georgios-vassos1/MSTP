@@ -3,7 +3,7 @@
 #   julia rerun/tables_final.jl         # fast tables (2,4,5,6,VSS + 6x6 of T3)
 #   BIG=1 julia rerun/tables_final.jl   # also 20x20x100 and 40x40x100 (slow)
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const INST = expanduser("~/drayage/MSTP/rerun/inst")
 const BIG  = get(ENV,"BIG","0") == "1"
 toi(x)= x isa Number ? Int64[Int64(x)] : Vector{Int64}(Int64.(collect(x)))

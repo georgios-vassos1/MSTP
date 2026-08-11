@@ -1,3 +1,17 @@
+> **SUPERSEDED — historical record.** These numbers come from the pre-refactor,
+> **unseeded** pure-Julia `rerun/*.jl` scripts and are frozen provenance. The
+> authoritative, reproducible results now come from the R package
+> (`mstp_reproduce_bounds` / `_recourse` / `_capopt`); see `../PARITY.md`. Two
+> substantive corrections the R-first reproduction established:
+> (1) the gain of recourse is **~14%**, not the ~51–52% reported below — the old
+> myopic cost double-counts inventory holding (`rerun/regret_vss.jl:76-77,80,83`);
+> (2) the package no longer depends on TLPR, and training is deterministic
+> (R-owned scenarios, bounded states, dual-simplex+presolve). The `rerun/*.jl`
+> scripts still run against the refactored engine via `rerun/compat.jl` (a shim
+> that re-exposes the old API, sampling in Julia); they now produce the current
+> engine's results, not the unseeded digits below, and their `myopic` still
+> double-counts holding (VSS ≈ 50%, uncorrected).
+
 # Refreshed certified results — FIXED generator (init_stock=0, low-overlap, differentiated rates)
 
 All bounds certified by validate_bound (z=3 SE). Pure-Julia (rerun/*.jl). λ=700 unless noted.

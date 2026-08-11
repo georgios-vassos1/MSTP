@@ -9,15 +9,18 @@ Description: R interface to a Julia/SDDP.jl engine for solving the multistage
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.1
 Imports:
     JuliaCall,
-    TLPR,
+    MASS,
     Matrix,
     highs,
     jsonlite,
     parallel,
-    data.table,
-    ggplot2
+    grDevices,
+    graphics,
+    methods,
+    stats,
+    utils
 Suggests:
-    rhdf5
+    testthat (>= 3.0.0)
+Config/roxygen2/version: 8.0.0
