@@ -15,7 +15,7 @@ for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
 specs <- lapply(c(5L, 10L, 20L, 50L, 100L, 300L), function(it)
   list(label = sprintf("it%d", it), tau = 12L, nOrigins = 6L, nDestinations = 6L,
        nCarriers = 20L, lambda = 20, target_util = 0.95, rho_cross = 0.0,
-       n_scenarios = 10L, iters = it, trials = 300L))
+       n_scenarios = 100L, iters = it, trials = 300L))
 
 tab <- mstp_reproduce_bounds(specs, seed = 42L)
 cat("\n=== M8 Table 6: SDDP convergence (scarce 6x6x20, tau=12, seed 42) ===\n")

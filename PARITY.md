@@ -71,11 +71,30 @@ The novel result reproduces: ~0 pp when ample, large under scarcity, growing
 monotonically with correlation. LP strips capacity to mean-feasible (xlp~2.89),
 SDDP retains buffer (xsd~3.63), matching `draft.tex:535`. **Parity (trend + ballpark).**
 
+## Table 6 -- SDDP convergence (scarce 6x6x20, tau=12, n_scen=100) -- all VALID
+iters 5/10/20/50/100/300 -> LB 14,548/17,533/19,678/20,609/20,904/21,047; UB flat
+~22,100; gap 53.7/26.2/12.4/7.3/5.8/5.0%. LB rises monotonically to a flat UB, valid
+throughout -- reproduces the paper's convergence story (early stopping safe). Terminal
+gap floor ~5% vs the paper's 2.2% (fixed-support SAA; the paper resamples per iteration).
+
+## Regret-based stopping (2x2, 500 OOB)
+mean regret 0.22/0.20/0.19/0.19/0.19% at iters {100,250,500,1000,1500}; q95 ~0.22%,
+stable. Small and stable across budgets -> regret-based stopping viable (paper G7).
+
+## Figures
+Fig 2 (correlation matrix) = `mstp_corrmat`; Fig 3 (sensitivity) = Table 5 data;
+Fig 4 (convergence) = Table 6 data; Fig 5 (cap-opt trajectory) reproduced via
+`mstp_capacity_trajectory` -- objective trends down, gradient norm bounded/noisy, step
+shrinks ~alpha0/sqrt(k) (`draft.tex:530`). Fig 1 is a hand-drawn intermodal schematic
+(`figs/Figure_1.png`) -- an illustration, not data-reproducible.
+
 ## Summary
 All paper tables reproduced (valid, R-driven, deterministic, TLPR-free) in one
 full-scale run (`tests/integration/reproduce_paper_heavy.R`): Table 2 (regret),
 Table 3 (all three sizes, valid), Table 4 (horizons), Table 5 (sensitivity),
-Tables 7-8 (capacity optimisation). Gain of recourse corrected to ~14% (the
+Table 6 (convergence), Tables 7-8 (capacity optimisation), the regret-based
+stopping table, and the data for Figures 2-5 (Figure 1 is a hand-drawn schematic).
+Gain of recourse corrected to ~14% (the
 paper's 52.3% is a myopic-cost holding double-count). Caveats, all documented
 above: numbers are a new seeded baseline (not old-digit identical); T5 is single
 seed 42 (paper averages 42-44); cap-opt uses the paper-faithful n_scen=20 (its

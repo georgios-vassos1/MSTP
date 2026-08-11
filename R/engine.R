@@ -317,6 +317,43 @@ mstp_capacity_optimize <- function(config, v, outer = 12L, cold = 100L,
   lapply(res, as.numeric)
 }
 
+#' Record the SDDP-dual projected-gradient capacity trajectory (Figure 5 data)
+#'
+#' Runs the SDDP-dual projected-gradient capacity optimisation and records, per
+#' outer iteration, the total procurement cost, gradient norm, and capacity step
+#' size. All scenarios are sampled in R (reproducible for a given `seed`).
+#'
+#' @param config `mstp_config` object.
+#' @param v Per-unit reservation price.
+#' @param outer,cold,eval_iters,n_eval,n_capdual As in [mstp_capacity_optimize()].
+#' @param seed Optional integer base seed.
+#' @return A named list of numeric vectors (length `outer`): `objective`,
+#'   `grad_norm`, `step_norm`.
+#' @export
+mstp_capacity_trajectory <- function(config, v, outer = 15L, cold = 100L,
+                                     eval_iters = 300L, n_eval = 500L,
+                                     n_capdual = 200L, seed = NULL) {
+  .ensure_engine()
+  stopifnot(inherits(config, "mstp_config"), is.numeric(v), length(v) == 1L)
+  outer <- as.integer(outer); cold <- as.integer(cold); eval_iters <- as.integer(eval_iters)
+  n_capdual <- as.integer(n_capdual); n_eval <- as.integer(n_eval)
+  n_fwd <- max(cold, eval_iters)
+  s <- function(off) if (is.null(seed)) NULL else as.integer(seed) + off
+
+  Om  <- mstp_scenario_support(config$tau, config$n_scenarios, config$lambda,
+                               config$corrmat, seed = s(0L))
+  fwd <- mstp_scenario_paths(n_fwd,     config$tau, config$lambda, config$corrmat, seed = s(1L))
+  cap <- mstp_scenario_paths(n_capdual, config$tau, config$lambda, config$corrmat, seed = s(2L))
+  ev  <- mstp_scenario_paths(n_eval,    config$tau, config$lambda, config$corrmat, seed = s(3L))
+
+  res <- JuliaCall::julia_call(
+    "capopt_traj_flat", config$jl,
+    .flatten_support(Om), .flatten_paths(fwd), .flatten_paths(cap), .flatten_paths(ev),
+    config$tau, config$n_scenarios, config$dim, n_fwd, n_capdual, n_eval,
+    v = as.numeric(v), outer = outer, cold = cold, eval_iters = eval_iters)
+  lapply(res, as.numeric)
+}
+
 #' Return a copy of an instance with updated carrier capacities
 #'
 #' Replaces `instance$carrier_capacity` with the supplied vector (rounded to

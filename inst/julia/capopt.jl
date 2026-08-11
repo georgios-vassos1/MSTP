@@ -130,3 +130,33 @@ function capopt_regime_flat(config::HyperParams,
         "x0_mean"  => mean(x0), "xlp_mean" => mean(xlp), "xsd_mean" => mean(xsd),
     )
 end
+
+# Record the SDDP-dual projected-gradient trajectory (Figure 5 data): per outer
+# iteration, the total procurement cost at the current capacity, the gradient
+# norm, and the capacity step size. R supplies all scenarios.
+function capopt_traj_flat(config::HyperParams,
+                          support_flat, fwd_flat, cap_oob_flat, eval_oob_flat,
+                          tau, n_scen, dim, n_fwd, n_capoob, n_evaloob;
+                          v, outer, cold, eval_iters, a0 = 20.0)
+    tau = Int64(tau); n_scen = Int64(n_scen); dim = Int64(dim)
+    support  = build_support(Vector{Float64}(support_flat), tau, n_scen, dim)
+    forward  = build_historical(Vector{Float64}(fwd_flat),  Int64(n_fwd),     tau, dim)
+    cap_oob  = build_historical(Vector{Float64}(cap_oob_flat),  Int64(n_capoob),  tau, dim)
+    eval_oob = build_historical(Vector{Float64}(eval_oob_flat), Int64(n_evaloob), tau, dim)
+    v = Float64(v); outer = Int64(outer); cold = Int64(cold); eval_iters = Int64(eval_iters)
+
+    vvec = fill(v, length(config.carrier_capacity))
+    x = Float64.(config.carrier_capacity); xmax = copy(x)
+    obj = Float64[]; gnorm = Float64[]; stepn = Float64[]
+    for k in 1:outer
+        cf   = with_capacity(config, x)
+        grad = simulate_cap_duals(train_model(cf, support, forward, cold), cf, cap_oob)["duals"] .+ v
+        gn   = norm(grad)
+        xnew = clamp.(x .- (a0 / sqrt(k)) .* (grad ./ (gn + 1e-12)), 1.0, xmax)
+        push!(gnorm, gn)
+        push!(stepn, norm(xnew .- x))
+        push!(obj, op_on(config, xnew, support, forward, eval_oob, eval_iters) + sum(vvec .* xnew))
+        x = xnew
+    end
+    Dict("objective" => obj, "grad_norm" => gnorm, "step_norm" => stepn)
+end
