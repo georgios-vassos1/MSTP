@@ -94,19 +94,19 @@ generate_instance <- function(
   base <- if (nCarriers == 1L) (rate_lo + rate_hi) / 2 else
             seq(rate_lo, rate_hi, length.out = nCarriers)
   transport_coef <- unlist(lapply(seq_len(nCarriers),
-                     function(c) base[c] + runif(length(Bids[[c]]), -0.1, 0.1)),
+                     function(c) base[c] + stats::runif(length(Bids[[c]]), -0.1, 0.1)),
                      use.names = FALSE)
 
   # Capacity calibration (unchanged): mean per-carrier load / utilisation draw.
   mean_load  <- lambda * nOrigins / nCarriers
-  util_draw  <- runif(nCarriers, util_lo, util_hi)
+  util_draw  <- stats::runif(nCarriers, util_lo, util_hi)
   util_draw  <- util_draw * (target_util / mean(util_draw))
   cap_per_cb <- pmax(1L, as.integer(round(mean_load / util_draw)))
   cb_caps    <- as.integer(rep(cap_per_cb, each = tau))
 
   # Spot carriers: priced above contracted, finite overflow capacity.
   spot_cap_per <- pmax(1L, as.integer(round(lambda * nOrigins / nSpotCarriers * 0.2)))
-  spot_coef    <- runif(nLanes * nSpotCarriers * tau, rate_hi, rate_hi + 4.0)
+  spot_coef    <- stats::runif(nLanes * nSpotCarriers * tau, rate_hi, rate_hi + 4.0)
 
   # Storage caps sized to be non-binding but well-conditioned (not 1e6).
   hold_all <- as.integer(ceiling(store_periods * lambda))

@@ -1,0 +1,22 @@
+# Excluded from the built R package; files stay in git. Each line is a Perl regex.
+# Project docs and reports, not package source
+^PARITY\.md$
+^REPRODUCE\.md$
+^DESIGN-.*\.md$
+^CHANGES-.*\.md$
+# Independent Julia reproduction oracle
+^rerun$
+# Bridge / reproduction scripts; the testthat suite stays in the build
+^tests/integration$
+^tests/acceptance$
+^tests/julia$
+# Regenerable execution artifacts and legacy scripts
+^SDDP.*\.log$
+.*\.mof\.json$
+.*\.cuts\.json$
+^inst/reproduce_paper_xx\.R$
+# VCS and editor
+^\.gitignore$
+^\.git$
+^.*\.Rproj$
+^\.Rproj\.user$

@@ -97,7 +97,7 @@ plot_sensitivity <- function(optx, title = "Sensitivity", scale_x = 1000) {
   densities <- apply(optx, 2L, stats::density)
   ylim <- range(sapply(densities, function(d) d$y))
   xlim <- range(sapply(densities, function(d) d$x))
-  plot(NA, xlim = xlim, ylim = ylim, xlab = "Total cost", ylab = "Density",
+  graphics::plot(NA, xlim = xlim, ylim = ylim, xlab = "Total cost", ylab = "Density",
        main = title, xaxt = "n", yaxt = "n")
   for (d in densities)
     graphics::lines(d, col = grDevices::rgb(0, 0, 0, alpha = 0.2), lwd = 2L)

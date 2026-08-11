@@ -92,7 +92,7 @@ mstp_to_tlpr_json <- function(inst, R, Q, W = NULL, path, nCO = NULL, nW = 3L, D
   if (is.null(W)) {
     p    <- seq(0, 1, length.out = nW + 2L)[-c(1L, nW + 2L)]
     W    <- list(
-      vals = as.numeric(round(quantile(inst$spot_coef, probs = p, names = FALSE), 2)),
+      vals = as.numeric(round(stats::quantile(inst$spot_coef, probs = p, names = FALSE), 2)),
       prob = rep(1.0 / nW, nW)
     )
   } else {
@@ -102,15 +102,15 @@ mstp_to_tlpr_json <- function(inst, R, Q, W = NULL, path, nCO = NULL, nW = 3L, D
 
   # ── Auction structure ─────────────────────────────────────────────────────
   # winner: named list, carrier key → integer vector of bid indices
-  winner    <- setNames(lapply(inst$Winners, as.integer), as.character(seq(nCS)))
+  winner    <- stats::setNames(lapply(inst$Winners, as.integer), as.character(seq(nCS)))
   winnerKey <- as.character(seq(nCS))
 
   # carrierIdx: importList<int> expects {"k": [single_int]}
   # In R: named list of scalars → toJSON wraps each as [k]
-  carrierIdx <- setNames(as.list(seq_len(nCS)), as.character(seq(nCS)))
+  carrierIdx <- stats::setNames(as.list(seq_len(nCS)), as.character(seq(nCS)))
 
   # CTb_list: per-carrier contract rates split by inst$nLc
-  CTb_list <- setNames(
+  CTb_list <- stats::setNames(
     lapply(seq(nCS), function(k) {
       as.numeric(inst$transport_coef[(inst$nLc[k] + 1L):inst$nLc[k + 1L]])
     }),

@@ -76,3 +76,6 @@ rerun/inst/
 
 # ── Legacy / venue-specific (pre-existing) ───────────────────────────────────
 *_xx.R
+
+# R CMD build output
+*.tar.gz

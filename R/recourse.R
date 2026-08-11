@@ -126,7 +126,7 @@ plot_regret <- function(regrets_list, max_regret = NULL) {
     xlim      <- range(sapply(densities, function(d) d$x))
     if (!is.null(max_regret)) xlim[2L] <- min(xlim[2L], max_regret)
 
-    plot(NA, xlim = xlim, ylim = pmin(ylim, 5e5),
+    graphics::plot(NA, xlim = xlim, ylim = pmin(ylim, 5e5),
          xlab = "Regret", ylab = "Density",
          main = paste0(iters, " SDDP Iterations"),
          xaxt = "n", yaxt = "n", cex.lab = 1.5, cex.main = 1.5)

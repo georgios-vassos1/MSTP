@@ -215,9 +215,11 @@ mstp_write_cuts <- function(model, path) {
 #' correctly across capacity changes and dramatically reduce the iterations
 #' needed for the lower bound to tighten.
 #'
-#' @param config      Julia proxy returned by `mstp_config()`.
+#' @param config      `mstp_config` object returned by `mstp_config()`.
 #' @param iterations  Additional SDDP iterations to run after loading cuts.
 #' @param cuts_path   Path to a cuts file written by `mstp_write_cuts()`.
+#' @param seed        Optional integer seed for the scenarios drawn in R
+#'   (support and forward trajectories).
 #' @return An opaque Julia proxy (SDDP.PolicyGraph).
 #' @export
 mstp_train_warm <- function(config, iterations, cuts_path, seed = NULL) {

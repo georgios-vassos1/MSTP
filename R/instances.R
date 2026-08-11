@@ -6,7 +6,7 @@
 #' @return Named list of instance lists, one per file.
 #' @export
 load_instances <- function(dir, pattern = "*.json", n_instances = NULL) {
-  files <- sort(list.files(dir, pattern = glob2rx(pattern), full.names = TRUE))
-  if (!is.null(n_instances)) files <- head(files, n_instances)
+  files <- sort(list.files(dir, pattern = utils::glob2rx(pattern), full.names = TRUE))
+  if (!is.null(n_instances)) files <- utils::head(files, n_instances)
   lapply(files, jsonlite::fromJSON)
 }
