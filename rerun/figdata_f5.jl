@@ -1,5 +1,5 @@
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const INST=expanduser("~/drayage/MSTP/rerun/inst"); const FD=expanduser("~/drayage/MSTP/rerun/figdata")
 toi(x)= x isa Number ? Int64[Int64(x)] : Vector{Int64}(Int64.(collect(x)))
 tof(x)= x isa Number ? Float64[Float64(x)] : Vector{Float64}(Float64.(collect(x)))

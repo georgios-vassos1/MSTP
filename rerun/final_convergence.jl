@@ -3,7 +3,7 @@
 # scarce 6x6 tau=12 instance.  batch=1 + checkpoint-per-iter absorbs the
 # occasional infeasible-node crash so successful iterations always accumulate.
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const INST=expanduser("~/drayage/MSTP/rerun/inst")
 toi(x)= x isa Number ? Int64[Int64(x)] : Vector{Int64}(Int64.(collect(x)))
 tof(x)= x isa Number ? Float64[Float64(x)] : Vector{Float64}(Float64.(collect(x)))

@@ -1,7 +1,7 @@
 # Verify (1) the Table-7 capacity-opt reversal is real (trajectory-logged PGD,
 # sensible x*), and (2) diagnose the m=2/4 sensitivity invalidity (per-seed margin).
 using JSON3, SDDP, JuMP, HiGHS, LinearAlgebra, Statistics
-include(expanduser("~/drayage/MSTP/inst/julia/mstp.jl"))
+include(expanduser("~/drayage/MSTP/rerun/compat.jl"))
 const INST = expanduser("~/drayage/MSTP/rerun/inst")
 toi(x)= x isa Number ? Int64[Int64(x)] : Vector{Int64}(Int64.(collect(x)))
 tof(x)= x isa Number ? Float64[Float64(x)] : Vector{Float64}(Float64.(collect(x)))
