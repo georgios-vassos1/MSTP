@@ -28,6 +28,16 @@ run <- function(tag, expr) {   # expr is a lazy promise -- forced exactly once
 
 say(sprintf("=== M8 heavy reproduction (seed 42) ==="))
 
+# T2 regret + gain of recourse (paper small topologies: tau=4, lambda=5.5,
+# rho=0.4, 1000 iters, 500 OOB). Gain is the CORRECT model.jl-accounted value
+# (~14%), not the paper's double-counted 52.3%.
+run("T2 regret + gain of recourse", do.call(rbind, lapply(list(
+  list(label="2x1", nOrigins=2L, nDestinations=1L, nCarriers=3L),
+  list(label="1x2", nOrigins=1L, nDestinations=2L, nCarriers=3L),
+  list(label="2x2", nOrigins=2L, nDestinations=2L, nCarriers=4L)
+), function(t) mstp_reproduce_recourse(c(t, list(tau=4L, lambda=5.5, rho_cross=0.4,
+  iters=1000L, trials=500L, n_scenarios=10L)), seed=42L))))
+
 # n_scenarios=100 gives valid bounds (M10); 50 for the huge 40x40 to bound compute.
 # T3 scalability (lambda=700, seed 42) -- paper Table 3
 run("T3 scalability", mstp_reproduce_bounds(list(

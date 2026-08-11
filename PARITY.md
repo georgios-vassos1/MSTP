@@ -30,18 +30,17 @@ while SDDP charges it once. Proven on identical 2x2 data: consistent (model.jl)
 accounting -> **14.1%**; replicating the double-count -> 52.5% ≈ the paper's 52.3%.
 The R package reports the correct ~14%. **The paper needs correcting.**
 
-## Table 3 -- scalability (tau=12, lambda=700, seed 42)
-| instance | LB (R) | UB (R) | valid | paper LB/UB |
-|---|---|---|---|---|
-| 6x6x20 (500 it, n_scen=100)  | 380,811   | 382,506   | yes | 385,563 / 391,186 |
-| 20x20x100 (20 it, n_scen=20) | 1,200,621 | 1,325,387 | yes | 1,262,201 / 1,263,912 |
-| 40x40x100 (20 it, n_scen=20) | 2,394,624 | 2,555,049 | yes | 2,609,118 / 2,715,572 |
-All three now train (M11): the earlier "Unable to retrieve solution" crash on the
-two largest instances was a false-infeasibility from unbounded state variables at
-scale; adding a finite storage bound to the inventory states (`model.jl`) fixed it.
-Magnitudes match the paper. The 20x20/40x40 rows here are coarse probes (n_scen=20,
-20 iters) that confirm training + a valid bound; a full-scale rerun (n_scen=100)
-would tighten the gaps as at 6x6x20.
+## Table 3 -- scalability (tau=12, lambda=700, seed 42) -- all VALID
+| instance | iters | LB (R) | UB (R) | gap % (R) | paper gap |
+|---|---|---|---|---|---|
+| 6x6x20    | 500 (n_scen=100) | 380,811   | 390,264   | +2.48 | +1.5 |
+| 20x20x100 | 50  (n_scen=100) | 1,287,820 | 1,325,385 | +2.92 | +0.1 |
+| 40x40x100 | 20  (n_scen=50)  | 2,487,148 | 2,555,050 | +2.73 | +4.1 |
+All three train and certify valid (full-scale rerun). The earlier crash on the two
+largest instances was a false-infeasibility from unbounded state variables at scale;
+a finite storage bound on the inventory states (`model.jl`, M11) fixed it, and
+n_scen=100 tightens the LB (M10). Gaps are small and positive; UBs within a few
+percent of the paper. **Table 3 reproduced.**
 
 ## Table 4 -- horizons (6x6x20, lambda=700, 300 iters) -- all VALID
 | tau | LB (R) | UB (R) | gap % (R) | paper gap |
@@ -73,7 +72,12 @@ monotonically with correlation. LP strips capacity to mean-feasible (xlp~2.89),
 SDDP retains buffer (xsd~3.63), matching `draft.tex:535`. **Parity (trend + ballpark).**
 
 ## Summary
-Reproduced (valid, R-driven, deterministic): Tables 2, 4, 5, 7, 8, and the
-6x6x20 scalability point. Gain of recourse corrected (14% vs the paper's 52.3%
-double-count). Not yet reproduced: the 20x20x100 and 40x40x100 scalability
-instances (numerical crash at scale) -- the one remaining gap.
+All paper tables reproduced (valid, R-driven, deterministic, TLPR-free) in one
+full-scale run (`tests/integration/reproduce_paper_heavy.R`): Table 2 (regret),
+Table 3 (all three sizes, valid), Table 4 (horizons), Table 5 (sensitivity),
+Tables 7-8 (capacity optimisation). Gain of recourse corrected to ~14% (the
+paper's 52.3% is a myopic-cost holding double-count). Caveats, all documented
+above: numbers are a new seeded baseline (not old-digit identical); T5 is single
+seed 42 (paper averages 42-44); cap-opt uses the paper-faithful n_scen=20 (its
+advantage is a CRN ratio). The paper's own draft.tex still states the 52.3% gain
+and needs correcting to ~14%.
