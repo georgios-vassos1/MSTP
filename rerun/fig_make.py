@@ -61,7 +61,7 @@ def fig5():
     for a in ax: a.set_xlabel("outer iteration")
     fig.tight_layout(); fig.savefig(f"{OUT}/Figure_4.pdf", bbox_inches="tight"); plt.close(fig)
 
-# ---- Figure 4: SDDP convergence -- LB rises to a flat out-of-sample UB, gap closes ----
+# ---- Figure 4: SDDP convergence -- LB rises to a flat in-sample UB, certified gap closes ----
 def fig6():
     d = load("convergence.json")
     it = np.array(d["iters"]); lb = np.array(d["lb"]); ub = np.array(d["ub"]); se = np.array(d["se"])
@@ -72,7 +72,7 @@ def fig6():
     fig, ax = plt.subplots(figsize=(4.8, 3.0))
     ax.fill_between(it, lb/1e3, ub/1e3, color=BLUE, alpha=0.12, lw=0, label="optimality gap")
     ax.fill_between(it, (ub-se)/1e3, (ub+se)/1e3, color=GREY, alpha=0.30, lw=0)
-    ax.plot(it, ub/1e3, "s-", color=GREY, lw=1.3, ms=3.5, label="out-of-sample cost (UB)")
+    ax.plot(it, ub/1e3, "s-", color=GREY, lw=1.3, ms=3.5, label="in-sample UB")
     ax.plot(it, lb/1e3, "o-", color=BLUE, lw=1.7, ms=4, label="lower bound (LB)")
     ax.set_xscale("log")
     ax.set_xticks([5, 10, 20, 50, 100, 300]); ax.set_xticklabels([5, 10, 20, 50, 100, 300])
