@@ -28,15 +28,23 @@ run <- function(tag, expr) {   # expr is a lazy promise -- forced exactly once
 
 say(sprintf("=== M8 heavy reproduction (seed 42) ==="))
 
-# T2 regret + gain of recourse (paper small topologies: tau=4, lambda=5.5,
-# rho=0.4, 1000 iters, 500 OOB). Gain is the CORRECT model.jl-accounted value
-# (~14%), not the paper's double-counted 52.3%.
-run("T2 regret + gain of recourse", do.call(rbind, lapply(list(
-  list(label="2x1", nOrigins=2L, nDestinations=1L, nCarriers=3L),
-  list(label="1x2", nOrigins=1L, nDestinations=2L, nCarriers=3L),
-  list(label="2x2", nOrigins=2L, nDestinations=2L, nCarriers=4L)
-), function(t) mstp_reproduce_recourse(c(t, list(tau=4L, lambda=5.5, rho_cross=0.4,
-  iters=1000L, trials=500L, n_scenarios=10L)), seed=42L))))
+# T2 small instances (tau=4, lambda=5.5, rho_cross=0.4, n_sc=100, 1000 iters, 500 OOB,
+# seed 42) -- paper Table 2 + gain of recourse (draft.tex:365,473). n_sc=100 matches the
+# paper's small-instance setting. The certificate call reports LB, the 95% in-sample
+# statistical UB (n_insample=5000), Gap%, and OOS cost (Table 2); the recourse call
+# reports out-of-sample regret and the gain of SDDP over the myopic policy (mean ~14%,
+# the model.jl-accounted value, not the old double-counted 52.3%).
+t2_small <- list(
+  list(label="2x1x3", nOrigins=2L, nDestinations=1L, nCarriers=3L),
+  list(label="1x2x3", nOrigins=1L, nDestinations=2L, nCarriers=3L),
+  list(label="2x2x4", nOrigins=2L, nDestinations=2L, nCarriers=4L))
+t2_common <- list(tau=4L, lambda=5.5, rho_cross=0.4, iters=1000L, trials=500L, n_scenarios=100L)
+run("T2 Table 2 SDDP certificate (LB / in-sample UB / Gap% / OOS cost)",
+    mstp_reproduce_bounds(lapply(t2_small, function(t) c(t, t2_common)),
+                          seed = 42L, n_insample = 5000L))
+run("T2 regret + gain of recourse (gain of recourse; draft.tex:471)",
+    do.call(rbind, lapply(t2_small, function(t)
+      mstp_reproduce_recourse(c(t, t2_common), seed = 42L))))
 
 # n_scenarios=100 gives valid bounds (M10); 50 for the huge 40x40 to bound compute.
 # T3 scalability (lambda=700, seed 42) -- paper Table 3
