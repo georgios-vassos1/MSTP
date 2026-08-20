@@ -16,6 +16,10 @@ for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
 .mstp$loaded <- TRUE
 
 run <- function(tag, expr) {   # expr is a lazy promise -- forced exactly once
+  only <- Sys.getenv("MSTP_ONLY", "")            # if set, run only tags matching a comma-sep substring
+  if (nzchar(only) && !any(vapply(strsplit(only, ",")[[1]],
+                                  function(o) grepl(trimws(o), tag, fixed = TRUE), logical(1))))
+    return(invisible(NULL))                       # lazy expr never forced -> skipped tags cost nothing
   say(sprintf("\n### %s ###", tag))
   res <- tryCatch(expr, error = function(e) { say("ERROR:", conditionMessage(e)); NULL })
   if (!is.null(res)) {
