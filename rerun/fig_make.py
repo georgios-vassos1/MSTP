@@ -33,9 +33,10 @@ def load(name): return json.load(open(os.path.join(FD, name)))
 
 # ---- Figure 3: sensitivity (lambda, rho, m), mean +/- sd ----
 def fig2():
-    lam = [(200,134379,33387),(700,380019,50766),(2000,1012886,103129)]
-    rho = [(0.0,388819,63206),(0.2,370472,42446),(0.4,364373,41772)]
-    mm  = [(1,400185,69989),(2,388355,65115),(4,388688,60783)]
+    d = load("sensitivity.json")
+    lam = [tuple(t) for t in d["lam"]]
+    rho = [tuple(t) for t in d["rho"]]
+    mm  = [tuple(t) for t in d["mm"]]
     fig, ax = plt.subplots(1, 3, figsize=(7.2, 2.5))
     for a,(dat,xl,ttl) in zip(ax, [(lam,r"$\lambda$","(a) Demand rate"),
                                     (rho,r"$\rho_{\mathrm{cross}}$","(b) Correlation"),
@@ -44,7 +45,7 @@ def fig2():
         a.errorbar(range(len(xs)), ys, yerr=es, fmt="o-", color=BLUE, capsize=3, lw=1.5, ms=5)
         a.set_xticks(range(len(xs))); a.set_xticklabels(xs)
         a.set_xlabel(xl); a.set_title(ttl)
-    ax[0].set_ylabel("Upper bound (×$10^3$)")
+    ax[0].set_ylabel("Out-of-sample cost (×$10^3$)")
     fig.tight_layout(); fig.savefig(f"{OUT}/Figure_3.pdf", bbox_inches="tight"); plt.close(fig)
 
 # (Removed from the paper: the regret-topo boxplot and the regret-vs-iters figure.
