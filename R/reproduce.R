@@ -30,12 +30,28 @@
 #'   a multiplier applied to the instance spot-cost coefficients.
 #' @param seed Integer base seed; the same seed reproduces the whole table.
 #' @param z Standard-error margin for the bound-validity flag (default 3).
-#' @return A `data.frame` with columns `label`, `tau`, `iters`, `LB`, `UB`,
-#'   `gap_pct` (= 100*(UB-LB)/|LB|), `sim_se`, `margin_se`, `valid`.
+#' @param n_insample Integer or `NULL` (default). If set, also compute the
+#'   in-sample statistical upper bound (mean `+ z_ci*SE` over `InSampleMonteCarlo`
+#'   simulations) and the SDDP convergence-certificate gap. A per-spec
+#'   `n_insample` overrides this. When `NULL` (and no spec sets it) the output is
+#'   identical to the out-of-sample-only table.
+#' @param z_ci Normal quantile for the in-sample upper bound (default 1.96, 95\%).
+#' @return A `data.frame` with columns `label`, `tau`, `iters`, `LB`, `UB`
+#'   (out-of-sample mean), `gap_pct` (= 100*(UB-LB)/|LB|), `sim_se`, `margin_se`,
+#'   `valid`. When `n_insample` is set, two further columns: `ub_insample` (the
+#'   in-sample statistical upper bound) and `gap_cert_pct`
+#'   (= 100*(ub_insample-LB)/|LB| \eqn{\ge} 0, the convergence certificate).
 #' @export
-mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0) {
+mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0,
+                                  n_insample = NULL, z_ci = 1.96) {
   .ensure_engine()
   stopifnot(is.list(specs), length(specs) >= 1L)
+
+  # Add the in-sample statistical UB (convergence certificate) only if requested,
+  # either call-wide (n_insample) or per-spec (s$n_insample). When neither is set,
+  # the returned data.frame is identical to the out-of-sample-only version.
+  do_ins <- !is.null(n_insample) ||
+    any(vapply(specs, function(s) !is.null(s$n_insample), logical(1)))
 
   rows <- lapply(specs, function(s) {
     stopifnot(!is.null(s$tau), !is.null(s$nOrigins), !is.null(s$nDestinations),
@@ -62,7 +78,7 @@ mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0) {
     vb <- mstp_validate_bound(model, cfg, trials = as.integer(.or(s$trials, 200L)),
                               z = z, seed = as.integer(seed))
 
-    data.frame(
+    row <- data.frame(
       label     = .or(s$label, sprintf("%dx%dx%d", s$nOrigins, s$nDestinations, s$nCarriers)),
       tau       = as.integer(s$tau),
       iters     = as.integer(s$iters),
@@ -74,6 +90,15 @@ mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0) {
       valid     = vb$valid,
       stringsAsFactors = FALSE
     )
+    if (do_ins) {
+      nins   <- as.integer(.or(s$n_insample, .or(n_insample, 2000L)))
+      ins    <- as.numeric(JuliaCall::julia_call("insample_costs", model,
+                                                 nins, as.integer(seed)))
+      ins_se <- stats::sd(ins) / sqrt(length(ins))
+      row$ub_insample  <- mean(ins) + z_ci * ins_se
+      row$gap_cert_pct <- 100 * (row$ub_insample - vb$bound) / abs(vb$bound)
+    }
+    row
   })
 
   do.call(rbind, rows)

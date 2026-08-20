@@ -17,9 +17,9 @@ specs <- lapply(c(5L, 10L, 20L, 50L, 100L, 300L), function(it)
        nCarriers = 20L, lambda = 20, target_util = 0.95, rho_cross = 0.0,
        n_scenarios = 100L, iters = it, trials = 300L))
 
-tab <- mstp_reproduce_bounds(specs, seed = 42L)
+tab <- mstp_reproduce_bounds(specs, seed = 42L, n_insample = 2000L)
 cat("\n=== M8 Table 6: SDDP convergence (scarce 6x6x20, tau=12, seed 42) ===\n")
-print(tab[, c("iters", "LB", "UB", "gap_pct", "valid")], row.names = FALSE, digits = 6)
+print(tab[, c("iters", "LB", "UB", "gap_pct", "ub_insample", "gap_cert_pct", "valid")], row.names = FALSE, digits = 6)
 cat("\nPaper (draft.tex:499-504) gap%: 5->32.5, 10->19.2, 20->10.3, 50->4.3, 100->2.9, 300->2.2\n")
 cat(sprintf("CHECK LB rises monotonically with iters: %s\n", all(diff(tab$LB) > -1e-6)))
 cat(sprintf("CHECK gap closes to < 5%% by 300 iters: %s (%.2f%%)\n",

@@ -286,6 +286,21 @@ function simulate_model(model::SDDP.PolicyGraph, config::HyperParams,
     )
 end
 
+# ─── In-sample upper bound (convergence certificate) ────────────────────────────
+# Simulate the trained policy over the registered support Omega
+# (InSampleMonteCarlo), so mean + z*SE is a statistical UPPER bound paired with
+# calculate_bound (LB): the standard SDDP convergence certificate, LB <= UB.
+# This is the same distribution the LB certifies (see model.jl parameterize),
+# so it never inverts the way the fresh out-of-sample mean can on small samples.
+# Seeded because InSampleMonteCarlo draws with Julia's RNG (unlike the R-supplied
+# out-of-sample paths), so the reported bound is reproducible.
+function insample_costs(model::SDDP.PolicyGraph, N::Int, seed::Int)
+    Random.seed!(seed)
+    sims = SDDP.simulate(model, N; sampling_scheme = SDDP.InSampleMonteCarlo(),
+                         parallel_scheme = SDDP.Serial())
+    return Float64[sum(node[:stage_objective] for node in sim) for sim in sims]
+end
+
 # ─── Capacity duals ───────────────────────────────────────────────────────────
 
 # Replay the caller-supplied out-of-sample trajectories and collect the dual of

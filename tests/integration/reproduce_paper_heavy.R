@@ -41,16 +41,16 @@ run("T2 regret + gain of recourse", do.call(rbind, lapply(list(
 # n_scenarios=100 gives valid bounds (M10); 50 for the huge 40x40 to bound compute.
 # T3 scalability (lambda=700, seed 42) -- paper Table 3
 run("T3 scalability", mstp_reproduce_bounds(list(
-  list(label="6x6x20",    tau=12L, nOrigins=6L,  nDestinations=6L,  nCarriers=20L,  lambda=700, iters=500L, trials=50L, n_scenarios=100L),
-  list(label="20x20x100", tau=12L, nOrigins=20L, nDestinations=20L, nCarriers=100L, lambda=700, iters=50L,  trials=50L, n_scenarios=100L),
-  list(label="40x40x100", tau=12L, nOrigins=40L, nDestinations=40L, nCarriers=100L, lambda=700, iters=20L,  trials=50L, n_scenarios=50L)
+  list(label="6x6x20",    tau=12L, nOrigins=6L,  nDestinations=6L,  nCarriers=20L,  lambda=700, iters=500L, trials=50L, n_scenarios=100L, n_insample=2000L),
+  list(label="20x20x100", tau=12L, nOrigins=20L, nDestinations=20L, nCarriers=100L, lambda=700, iters=50L,  trials=50L, n_scenarios=100L, n_insample=500L),
+  list(label="40x40x100", tau=12L, nOrigins=40L, nDestinations=40L, nCarriers=100L, lambda=700, iters=20L,  trials=50L, n_scenarios=50L,  n_insample=100L)
 ), seed = 42L))
 
 # T4 horizons (6x6x20, lambda=700, 300 iters) -- paper Table 4
 run("T4 horizons", mstp_reproduce_bounds(list(
-  list(label="tau12", tau=12L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L),
-  list(label="tau26", tau=26L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L),
-  list(label="tau52", tau=52L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L)
+  list(label="tau12", tau=12L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L, n_insample=2000L),
+  list(label="tau26", tau=26L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L, n_insample=2000L),
+  list(label="tau52", tau=52L, nOrigins=6L, nDestinations=6L, nCarriers=20L, lambda=700, iters=300L, trials=200L, n_scenarios=100L, n_insample=2000L)
 ), seed = 42L))
 
 # T5 sensitivity (6x6x20 tau=12, 300 iters; single seed 42 -- paper averages 42-44)
