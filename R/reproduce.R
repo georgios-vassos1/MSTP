@@ -116,7 +116,8 @@ mstp_reproduce_bounds <- function(specs, seed = 1L, z = 3.0,
 #'   `trials`, `n_scenarios`, `rho_oo`, `rho_dd`, `rho_cross`).
 #' @param seed Integer base seed (reproduces the whole row).
 #' @return A one-row `data.frame` with `label`, `mean_regret_pct`,
-#'   `median_regret_pct`, `q95_regret_pct`, and `mean_gain_pct`.
+#'   `median_regret_pct`, `q95_regret_pct`, `mean_gain_pct`, `median_gain_pct`,
+#'   and `pos_gain_frac` (fraction of out-of-sample trajectories with gain > 0).
 #' @export
 mstp_reproduce_recourse <- function(spec, seed = 1L) {
   .ensure_engine()
@@ -146,6 +147,8 @@ mstp_reproduce_recourse <- function(spec, seed = 1L) {
     median_regret_pct = 100 * stats::median(reg),
     q95_regret_pct    = 100 * as.numeric(stats::quantile(reg, 0.95)),
     mean_gain_pct     = 100 * mean(gn),
+    median_gain_pct   = 100 * stats::median(gn),
+    pos_gain_frac     = mean(gn > 0),
     stringsAsFactors  = FALSE
   )
 }
