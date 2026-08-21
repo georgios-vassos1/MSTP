@@ -60,7 +60,7 @@ def fig5():
     ax[1].plot(it, d["gradnorm"], "o-", color=BLUE, lw=1.5, ms=4); ax[1].set_title(r"(b) $\|\nabla f\|_2$")
     ax[2].plot(it, d["step"], "o-", color=BLUE, lw=1.5, ms=4); ax[2].set_title(r"(c) $\|\Delta x\|_2$")
     for a in ax: a.set_xlabel("outer iteration")
-    fig.tight_layout(); fig.savefig(f"{OUT}/Figure_4.pdf", bbox_inches="tight"); plt.close(fig)
+    fig.tight_layout(); fig.savefig(f"{OUT}/Figure_5.pdf", bbox_inches="tight"); plt.close(fig)
 
 # ---- Figure 4: SDDP convergence -- LB rises to a flat in-sample UB, certified gap closes ----
 def fig6():

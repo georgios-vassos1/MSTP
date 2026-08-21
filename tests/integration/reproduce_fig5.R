@@ -18,7 +18,7 @@ S   <- mstp_corrmat(6, 6, rho_cross = 0.0)
 cfg <- mstp_config(inst, lambda = 20, corrmat = S, n_scenarios = 20L)
 v   <- 0.2 * mean(inst$transport_coef)
 
-tr <- mstp_capacity_trajectory(cfg, v = v, outer = 8L, cold = 25L,
+tr <- mstp_capacity_trajectory(cfg, v = v, outer = 15L, cold = 25L,
                                eval_iters = 25L, n_eval = 100L, n_capdual = 50L, seed = 42L)
 
 cat("\n=== M12: Figure 5 cap-opt trajectory (scarce 6x6x20) ===\n")
@@ -29,3 +29,12 @@ print(data.frame(iter = seq_along(tr$objective),
 cat(sprintf("\nCHECK objective net-decreases (last < first): %s\n", tail(tr$objective,1) < tr$objective[1]))
 cat(sprintf("CHECK gradient norm finite/bounded: %s\n", all(is.finite(tr$grad_norm))))
 cat(sprintf("CHECK step shrinks (last < first): %s\n", tail(tr$step_norm,1) < tr$step_norm[1]))
+
+# Emit Fig. 5 data for rerun/fig_make.py fig5().
+FD <- file.path(root, "rerun", "figdata"); dir.create(FD, showWarnings = FALSE, recursive = TRUE)
+.a <- function(x) paste0("[", paste(round(x, 4), collapse = ", "), "]")
+writeLines(sprintf('{\n "iter": %s,\n "obj": %s,\n "gradnorm": %s,\n "step": %s\n}\n',
+                   paste0("[", paste(seq_along(tr$objective), collapse = ", "), "]"),
+                   .a(tr$objective), .a(tr$grad_norm), .a(tr$step_norm)),
+           file.path(FD, "capopt_traj.json"))
+cat(sprintf("wrote %s (Fig. 5 data)\n", file.path(FD, "capopt_traj.json")))
