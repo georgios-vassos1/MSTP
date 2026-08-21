@@ -6,20 +6,12 @@
 #
 # It is NOT part of the fast unit suite (it starts Julia and trains SDDP).
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
+setup_engine()   # initialise the Julia engine; raw julia_call internals below need it loaded
 
 root <- normalizePath(".")
 options(warn = 1)
 
-# --- wire the engine without installing the package -------------------------
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf(
-  'import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-  file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE   # engine already sourced above; skip setup_engine()
 
 ok <- TRUE
 check <- function(cond, msg) { cat(if (cond) "PASS: " else "FAIL: ", msg, "\n", sep=""); ok <<- ok && cond }
@@ -29,7 +21,7 @@ check <- function(cond, msg) { cat(if (cond) "PASS: " else "FAIL: ", msg, "\n", 
 # verify the flat arrays round-trip through the Julia builders unchanged.
 Om_chk <- list(matrix(c(1,2,3, 4,5,6),    nrow = 2, byrow = TRUE),   # stage 1: 2 scen x 3 dim
                matrix(c(7,8,9, 10,11,12), nrow = 2, byrow = TRUE))   # stage 2
-sup <- JuliaCall::julia_call("build_support", .flatten_support(Om_chk),
+sup <- JuliaCall::julia_call("build_support", MSTP:::.flatten_support(Om_chk),
                              2L, 2L, 3L, need_return = "R")
 check(identical(as.numeric(sup[[1]][[1]]), c(1,2,3)) &&
       identical(as.numeric(sup[[2]][[2]]), c(10,11,12)),
@@ -37,7 +29,7 @@ check(identical(as.numeric(sup[[1]][[1]]), c(1,2,3)) &&
 
 P_chk <- list(matrix(c(1,2, 3,4), nrow = 2, byrow = TRUE),           # path 1: tau 2 x dim 2
               matrix(c(5,6, 7,8), nrow = 2, byrow = TRUE))           # path 2
-hist <- JuliaCall::julia_call("build_historical", .flatten_paths(P_chk),
+hist <- JuliaCall::julia_call("build_historical", MSTP:::.flatten_paths(P_chk),
                               2L, 2L, 2L, need_return = "R")
 # hist[[path]][[stage]] = (stage_index, noise_vector)
 check(identical(as.numeric(hist[[1]][[1]][[2]]), c(1,2)) &&

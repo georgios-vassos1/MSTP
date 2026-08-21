@@ -3,14 +3,8 @@
 # below 3 (valid) as n_scenarios grows, the fixed-small-support SAA bias is
 # confirmed as the cause and the fix direction (larger / resampled support) holds.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 specs <- lapply(c(10L, 50L, 100L), function(ns)
   list(label = sprintf("nscen%d", ns), tau = 12L, nOrigins = 6L, nDestinations = 6L,

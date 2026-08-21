@@ -1,12 +1,6 @@
 # Smoke test for the in-sample-UB extension of mstp_reproduce_bounds.
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 tab <- mstp_reproduce_bounds(list(
   list(label = "smoke", tau = 4L, nOrigins = 2L, nDestinations = 2L, nCarriers = 4L,

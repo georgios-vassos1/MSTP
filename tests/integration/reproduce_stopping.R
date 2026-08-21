@@ -2,14 +2,8 @@
 # instance (tau=4, lambda=5.5, rho=0.4, 500 OOB). Paper's point (G7): regret is
 # small and stable across budgets, so regret-based early stopping is viable.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 rows <- lapply(c(100L, 250L, 500L, 1000L, 1500L), function(it)
   mstp_reproduce_recourse(list(label = sprintf("it%d", it), tau = 4L, nOrigins = 2L,

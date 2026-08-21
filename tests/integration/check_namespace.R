@@ -1,7 +1,7 @@
 # Lightweight consistency gate (no Julia): every R source parses, and every
 # NAMESPACE export resolves to a defined object once the sources are loaded.
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
 
+suppressMessages(library(MSTP))
 ns  <- readLines("NAMESPACE")
 exp <- grep("^export[(]", ns, value = TRUE)
 nms <- gsub("^export[(]|[)]$", "", exp)

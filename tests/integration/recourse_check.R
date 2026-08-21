@@ -4,15 +4,9 @@
 # it (regret >= 0); and the foresight optimum cannot exceed the myopic policy
 # (clairvoyant <= myopic). Both must hold on every trajectory.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath(".")
 options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 inst <- generate_instance(tau = 4L, nOrigins = 2L, nDestinations = 3L,
                           nCarriers = 3L, seed = 42L, lambda = 30.0)

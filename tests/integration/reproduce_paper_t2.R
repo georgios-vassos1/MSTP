@@ -4,14 +4,8 @@
 # seed 42 -- draft.tex:362,368). Prints actual numbers next to the paper's.
 # Numbers are a new seeded baseline, not digit-matches of the old unseeded runs.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 base <- list(tau = 4L, lambda = 5.5, rho_cross = 0.4, iters = 1000L,
              trials = 500L, n_scenarios = 10L)

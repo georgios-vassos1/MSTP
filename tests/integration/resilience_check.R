@@ -3,14 +3,8 @@
 # and the scarce (lambda=20, 95% util) regimes -- deterministically and with a
 # valid bound. No explicit solver mode is set (exercises the default + fallback).
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 ok <- TRUE
 check <- function(cond, msg) { cat(if (cond) "PASS: " else "FAIL: ", msg, "\n", sep=""); ok <<- ok && cond }

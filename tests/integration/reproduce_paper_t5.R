@@ -7,14 +7,8 @@
 #   Cost = out-of-sample mean; sd = within-seed OOS sd (= sim_se*sqrt(trials));
 #   both averaged over the three seeds.
 # Writes rerun/figdata/sensitivity.json for Fig. 3 (fig_make.py fig2).
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 SEEDS <- c(42L, 43L, 44L)
 base  <- list(tau = 12L, nOrigins = 6L, nDestinations = 6L, nCarriers = 20L,

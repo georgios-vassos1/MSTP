@@ -3,17 +3,11 @@
 # failure (or the process being killed) leaves earlier results on disk.
 # Results are appended to tests/integration/paper_results.txt.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
 OUT <- file.path(root, "tests", "integration", "paper_results.txt")
 say <- function(...) { cat(..., "\n"); cat(..., "\n", file = OUT, append = TRUE) }
 
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 run <- function(tag, expr) {   # expr is a lazy promise -- forced exactly once
   only <- Sys.getenv("MSTP_ONLY", "")            # if set, run only tags matching a comma-sep substring

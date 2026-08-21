@@ -1,14 +1,8 @@
 # M10: does n_scenarios=100 also fix the crash + validity at the 500-iter T3
 # setting (6x6x20 tau=12 lambda=700) that failed under n_scenarios=10?
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 t0 <- Sys.time()
 tab <- mstp_reproduce_bounds(list(

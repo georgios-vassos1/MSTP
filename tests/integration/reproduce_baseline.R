@@ -7,16 +7,9 @@
 # This is the fast (tiny-instance) gate. The paper-scale table is the same
 # harness called with paper specs (see REPRODUCE.md); it is not run here.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath(".")
 options(warn = 1)
-
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf(
-  'import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)', file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 # Tiny specs spanning two axes the paper varies (size and horizon).
 specs <- list(

@@ -5,15 +5,9 @@
 # accounting + move/state layout with NO LP and NO TLPR — the foundation for a
 # correct pure-R regret/VSS.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath(".")
 options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 # Non-square topology (nL = nI*nJ = 6 != nOD = nI+nJ = 5) so the spot-cost index
 # distinguishes nL from nOD (they coincide on square 2x2 instances).

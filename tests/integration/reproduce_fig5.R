@@ -3,14 +3,8 @@
 # the shape is what Figure 5 shows: objective trends down, gradient norm bounded
 # and noisy, capacity step shrinks (~alpha0/sqrt(k)) (draft.tex:530).
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 inst <- generate_instance(tau = 12L, nOrigins = 6L, nDestinations = 6L,
                           nCarriers = 20L, seed = 42L, lambda = 20, target_util = 0.95)

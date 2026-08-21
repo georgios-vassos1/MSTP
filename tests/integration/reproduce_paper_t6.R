@@ -3,14 +3,8 @@
 # UB flat from iter ~5 (draft.tex:499-504). Scarce regime = lambda=20, 95% util.
 # Same instance, increasing iteration budget; seed 42.
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 specs <- lapply(c(5L, 10L, 20L, 50L, 100L, 300L), function(it)
   list(label = sprintf("it%d", it), tau = 12L, nOrigins = 6L, nDestinations = 6L,

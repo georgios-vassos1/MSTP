@@ -1,14 +1,8 @@
 # M11: does the finite state bound (model.jl) let 20x20x100 train under the
 # default solver, where it previously crashed under all solver modes?
 
-suppressMessages(library(JuliaCall))
+suppressMessages(library(MSTP))
 root <- normalizePath("."); options(warn = 1)
-JuliaCall::julia_setup(installJulia = FALSE)
-JuliaCall::julia_command(sprintf('import Pkg; Pkg.activate(raw"%s"); Pkg.offline(true)',
-                                 file.path(root, "inst", "julia")))
-JuliaCall::julia_source(file.path(root, "inst", "julia", "mstp.jl"))
-for (f in list.files("R", pattern = "[.]R$", full.names = TRUE)) source(f)
-.mstp$loaded <- TRUE
 
 inst <- generate_instance(tau = 12L, nOrigins = 20L, nDestinations = 20L,
                           nCarriers = 100L, seed = 42L, lambda = 700)
